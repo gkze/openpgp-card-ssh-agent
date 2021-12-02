@@ -7,8 +7,10 @@ use ssh_agent::proto::{message::Identity, Message};
 use hyper::{Body, Client, Request};
 use hyper_tls::HttpsConnector;
 
+#[derive(Default)]
 struct Backend {
     loc: std::sync::Arc<std::sync::Mutex<std::cell::RefCell<Option<String>>>>,
+    public: std::sync::Arc<std::sync::Mutex<std::cell::RefCell<Option<String>>>>,
 }
 
 impl ssh_agent::agent::Agent for Backend {
@@ -16,22 +18,79 @@ impl ssh_agent::agent::Agent for Backend {
 
     fn handle(&self, request: Message) -> Result<Message, Self::Error> {
         eprintln!("-> {:X?}", request);
-        let key = openssh_keys::PublicKey::parse("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILHCXBJYlPPkrt2WYyP3SZoMx43lDBB5QALjE762EQlc openpgp:0x0529CE0A").unwrap();
-        eprintln!("LEM = {}", key.data().len());
-        eprintln!("Key = {:X?}", key.data());
+        //let key = openssh_keys::PublicKey::parse("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILHCXBJYlPPkrt2WYyP3SZoMx43lDBB5QALjE762EQlc openpgp:0x0529CE0A").unwrap();
+        //eprintln!("LEM = {}", key.data().len());
+        //eprintln!("Key = {:X?}", key.data());
         //let data = base64::decode("AAAAC3NzaC1lZDI1NTE5AAAAIPXlzC83a2MfZUYIY/J+Qymr7x4n29Wwix9KW0dl1Yl6").unwrap(); // sig key
-        let data =
-            base64::decode("AAAAC3NzaC1lZDI1NTE5AAAAILHCXBJYlPPkrt2WYyP3SZoMx43lDBB5QALjE762EQlc")
-                .unwrap(); // auth key
+        //let data =
+        //    base64::decode("AAAAC3NzaC1lZDI1NTE5AAAAILHCXBJYlPPkrt2WYyP3SZoMx43lDBB5QALjE762EQlc")
+        //        .unwrap(); // auth key
         match request {
-            Message::RequestIdentities => Ok(Message::IdentitiesAnswer(vec![Identity {
-                pubkey_blob: data,
-                comment: "".to_string(),
-            }])),
-	    Message::AddSmartcardKey(key) => {
-		eprintln!("KEY => {:?}", key);
-		let id = key.id;
-		let pin = key.pin;
+            Message::RequestIdentities => {
+                let public = std::sync::Arc::clone(&self.public);
+                let public = public.lock().unwrap();
+                let public = public.borrow();
+                if public.is_none() {
+                    eprintln!("No identities.");
+                    return Ok(Message::IdentitiesAnswer(vec![]));
+                }
+                let public = if let Some(public) = &*public {
+                    public.to_string()
+                } else {
+                    return Ok(Message::Failure);
+                };
+
+                let client = Client::builder().build(HttpsConnector::new());
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_io()
+                    .enable_time()
+                    .build()
+                    .unwrap();
+
+                let request = Request::builder()
+                    .method("GET")
+                    .uri(public)
+                    .body(Body::default())
+                    .unwrap();
+                let response = rt.block_on(client.request(request)).unwrap();
+
+                if !response.status().is_success() {
+                    return Err(BackendError::Unknown("badbad".to_string()));
+                }
+
+                let content_type =
+                    if let Some(content_type) = response.headers().get("Content-Type") {
+                        content_type.to_str().unwrap().to_string()
+                    } else {
+                        return Err(BackendError::Unknown("No Content-Type".to_string()));
+                    };
+
+                let data = rt
+                    .block_on(hyper::body::to_bytes(response))
+                    .unwrap()
+                    .to_vec();
+                let pubkey_blob = if content_type == "application/prs.wiktor.ed25519" {
+                    let mut pubkey_blob = vec![0, 0, 0, 0xb];
+                    pubkey_blob.extend("ssh-ed25519".as_bytes());
+                    pubkey_blob.extend(vec![0, 0, 0, 0x20]);
+                    pubkey_blob.extend(data);
+                    pubkey_blob
+                } else if content_type == "application/prs.wiktor.rsa" {
+                    let pub_key = openssh_keys::PublicKey::from_rsa(vec![1, 0, 1], data);
+                    pub_key.data()
+                } else {
+                    return Err(BackendError::Unknown("Unknown Content-Type".to_string()));
+                };
+
+                Ok(Message::IdentitiesAnswer(vec![Identity {
+                    pubkey_blob,
+                    comment: "".to_string(),
+                }]))
+            }
+            Message::AddSmartcardKey(key) => {
+                eprintln!("KEY => {:?}", key);
+                let id = &key.id;
+                let pin = key.pin;
 
                 let location = id;
 
@@ -54,30 +113,35 @@ impl ssh_agent::agent::Agent for Backend {
                     return Err(BackendError::Unknown("badbad".to_string()));
                 }
 
-		let location = if let Some(loc) = response.headers().get("Location") {
-		    loc.to_str().unwrap()
-		} else {
-		    return Ok(Message::Failure);
-		};
-		
-		let loc = std::sync::Arc::clone(&self.loc);
-		let loc = loc.lock().unwrap();
+                let location = if let Some(loc) = response.headers().get("Location") {
+                    loc.to_str().unwrap()
+                } else {
+                    return Ok(Message::Failure);
+                };
 
-		loc.replace(Some(location.to_string()));
+                let loc = std::sync::Arc::clone(&self.loc);
+                let loc = loc.lock().unwrap();
 
-		Ok(Message::Success)
-	    },
+                loc.replace(Some(location.to_string()));
+
+                let public = std::sync::Arc::clone(&self.public);
+                let public = public.lock().unwrap();
+
+                public.replace(Some(format!("{}/public", key.id)));
+
+                Ok(Message::Success)
+            }
             Message::SignRequest(request) => {
                 let body = request.data;
-		
-		let loc = std::sync::Arc::clone(&self.loc);
-		let loc = loc.lock().unwrap();
-		let loc = loc.borrow();
-		let location = if let Some(loc) = &*loc {
-		    loc.to_string()
-		} else {
-		    return Ok(Message::Failure);
-		};
+
+                let loc = std::sync::Arc::clone(&self.loc);
+                let loc = loc.lock().unwrap();
+                let loc = loc.borrow();
+                let location = if let Some(loc) = &*loc {
+                    loc.to_string()
+                } else {
+                    return Ok(Message::Failure);
+                };
 
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_io()
@@ -137,12 +201,12 @@ fn main() {
 
     eprintln!("fn=main pipe={} at=bind", pipe.display());
 
-    let agent = Backend { loc:
-			  std::sync::Arc::new(
-			      std::sync::Mutex::new(
-				  std::cell::RefCell::new(None)
-				      ))
-    };
+    let agent = Backend::default(); /* { loc:
+                                              std::sync::Arc::new(
+                                                  std::sync::Mutex::new(
+                                                  std::cell::RefCell::new(None)
+                                                      ))
+                                    };*/
     match agent.run_unix(&pipe) {
         Err(e) => eprintln!("fn=main pipe={} at=bind err={:?}", pipe.display(), e),
         Ok(_) => {}
