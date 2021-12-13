@@ -1,0 +1,17 @@
+image: rust
+
+check-format:
+  before_script:
+    - rustup component add rustfmt
+  script:
+    - cargo fmt -- --check
+
+check-lint:
+  before_script:
+    - rustup component add clippy
+  script:
+    - cargo clippy --all
+
+unit-tests:
+  script:
+    - cargo test --all --verbose
