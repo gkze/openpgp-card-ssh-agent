@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ssh-agent = { path = "../ssh-agent.rs", version = "0.2.3", features = ["agent"] }
+ssh-agent = { version = "0.2.3", features = ["agent"] }
 base64 = "0.13.0"
 openssh-keys = "0.5.0"
 hyper = { version = "0.14.14", features = ["full"] }
