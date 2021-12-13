@@ -141,6 +141,15 @@ impl ssh_agent::agent::Agent for Backend {
             }
             Message::SignRequest(request) => {
                 let body = request.data;
+                const SSH_AGENT_RSA_SHA2_256: u32 = 2;
+                const SSH_AGENT_RSA_SHA2_512: u32 = 4;
+                let content_type = if request.flags & SSH_AGENT_RSA_SHA2_256 != 0 {
+                    "application/vnd.pks.digest.sha256"
+                } else if request.flags & SSH_AGENT_RSA_SHA2_512 != 0 {
+                    "application/vnd.pks.digest.sha512"
+                } else {
+                    "application/octet-stream"
+                };
 
                 let loc = std::sync::Arc::clone(&self.loc);
                 let loc = loc.lock().unwrap();
@@ -162,6 +171,7 @@ impl ssh_agent::agent::Agent for Backend {
                 let request = Request::builder()
                     .method("POST")
                     .uri(location)
+                    .header("Content-Type", content_type)
                     .body(Body::from(body))
                     .unwrap();
                 let response = rt.block_on(client.request(request)).unwrap();
@@ -170,6 +180,12 @@ impl ssh_agent::agent::Agent for Backend {
                     return Err(BackendError::Unknown("badbad".to_string()));
                 }
 
+                let response_type = response
+                    .headers()
+                    .get("Content-Type")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("application/octet-stream")
+                    .to_string();
                 let signature = rt
                     .block_on(hyper::body::to_bytes(response))
                     .unwrap()
@@ -177,10 +193,19 @@ impl ssh_agent::agent::Agent for Backend {
 
                 //let signature = vec![];
                 eprintln!("SIG: {:?} ({})", signature, signature.len());
+                let algorithm = if response_type == "application/vnd.pks.signature.rsa" {
+                    if content_type == "application/vnd.pks.digest.sha256" {
+                        "rsa-sha2-256"
+                    } else {
+                        "rsa-sha2-512"
+                    }
+                } else {
+                    "ssh-ed25519"
+                };
 
                 Ok(Message::SignResponse(
                     (ssh_agent::proto::signature::Signature {
-                        algorithm: "ssh-ed25519".to_string(),
+                        algorithm: algorithm.to_string(),
                         blob: signature,
                     })
                     .to_blob()
