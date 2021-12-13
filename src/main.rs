@@ -64,19 +64,27 @@ impl ssh_agent::agent::Agent for Backend {
                     } else {
                         return Err(BackendError::Unknown("No Content-Type".to_string()));
                     };
+                let exponent = response
+                    .headers()
+                    .get("Exponent")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(65567);
 
                 let data = rt
                     .block_on(hyper::body::to_bytes(response))
                     .unwrap()
                     .to_vec();
-                let pubkey_blob = if content_type == "application/prs.wiktor.ed25519" {
+                let pubkey_blob = if content_type == "application/vnd.pks.public.ed25519.compressed"
+                {
                     let mut pubkey_blob = vec![0, 0, 0, 0xb];
                     pubkey_blob.extend("ssh-ed25519".as_bytes());
                     pubkey_blob.extend(vec![0, 0, 0, 0x20]);
                     pubkey_blob.extend(data);
                     pubkey_blob
-                } else if content_type == "application/prs.wiktor.rsa" {
-                    let pub_key = openssh_keys::PublicKey::from_rsa(vec![1, 0, 1], data);
+                } else if content_type == "application/vnd.pks.public.rsa.modulus" {
+                    let pub_key =
+                        openssh_keys::PublicKey::from_rsa(exponent.to_be_bytes().into(), data);
                     pub_key.data()
                 } else {
                     return Err(BackendError::Unknown("Unknown Content-Type".to_string()));
@@ -190,27 +198,46 @@ pub enum BackendError {
 }
 
 fn main() {
-    let pipe = "/tmp/pks-ssh-agent";
-    let pipe = Path::new(pipe);
+    env_logger::init();
+    /*
+        let pipe = "/tmp/pks-ssh-agent";
+        let pipe = Path::new(pipe);
 
-    if fs::metadata(&pipe).is_ok() {
-        if let Ok(_) = fs::remove_file(&pipe) {
-            println!("fn=main pipe={} at=deleted", pipe.display());
+        if fs::metadata(&pipe).is_ok() {
+            if let Ok(_) = fs::remove_file(&pipe) {
+                println!("fn=main pipe={} at=deleted", pipe.display());
+            }
         }
-    }
 
-    eprintln!("fn=main pipe={} at=bind", pipe.display());
-
+        eprintln!("fn=main pipe={} at=bind", pipe.display());
+    */
     let agent = Backend::default(); /* { loc:
-                                              std::sync::Arc::new(
-                                                  std::sync::Mutex::new(
-                                                  std::cell::RefCell::new(None)
-                                                      ))
+                                                                                  std::sync::Arc::new(
+                                                                                      std::sync::Mutex::new(
+                                                                                      std::cell::RefCell::new(None)
+                                                                                          ))
                                     };*/
-    match agent.run_unix(&pipe) {
-        Err(e) => eprintln!("fn=main pipe={} at=bind err={:?}", pipe.display(), e),
-        Ok(_) => {}
+    //let mut listenfd = listenfd::ListenFd::from_env();
+
+    //if let Some(listener) = listenfd.take_tcp_listener(0).unwrap() {
+    //let listen_fds: std::os::unix::io::RawFd = std::env::var("LISTEN_FDS").unwrap().parse().unwrap();
+    //eprintln!("LISTEN_FD is <{}>", listen_fds);
+    //let fds = systemd_socket::listen_fds(true).unwrap();
+    use std::os::unix::io::FromRawFd;
+    let listener = unsafe { std::net::TcpListener::from_raw_fd(0) };
+    match agent.run_listener(listener) {
+        Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
+        Ok(_) => eprintln!("Listening done!"),
     }
 
-    eprintln!("fn=main pipe={} at=finished", pipe.display());
+    /*
+        } else {
+        match agent.run_unix(&pipe) {
+            Err(e) => eprintln!("fn=main pipe={} at=bind err={:?}", pipe.display(), e),
+            Ok(_) => {}
+        }
+        }
+    */
+    //eprintln!("fn=main pipe={} at=finished", pipe.display());
+    eprintln!("Exiting...");
 }
