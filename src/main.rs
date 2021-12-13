@@ -69,7 +69,7 @@ impl ssh_agent::agent::Agent for Backend {
                     .get("Exponent")
                     .and_then(|v| v.to_str().ok())
                     .and_then(|s| s.parse::<u32>().ok())
-                    .unwrap_or(65567);
+                    .unwrap_or(65537);
 
                 let data = rt
                     .block_on(hyper::body::to_bytes(response))
