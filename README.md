@@ -2,11 +2,11 @@
 
 You need a PKS implementation for example this: https://gitlab.com/wiktor/pks-openpgp-card to be running.
 
-Then `cargo run` this one. The socket will be at `/tmp/pks-ssh-agent`.
+Then `cargo run` this one. The socket will be at `$XDG_RUNTIME_DIR/pks-ssh-agent.sock`.
 
 For the sake of the example set the env variable:
 ```
-export SSH_AUTH_SOCK=/tmp/pks-ssh-agent
+export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/pks-ssh-agent.sock
 ```
 
 Next, you need to add your key to the agent:

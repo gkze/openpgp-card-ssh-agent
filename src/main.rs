@@ -224,45 +224,52 @@ pub enum BackendError {
 
 fn main() {
     env_logger::init();
-    /*
-        let pipe = "/tmp/pks-ssh-agent";
-        let pipe = Path::new(pipe);
 
-        if fs::metadata(&pipe).is_ok() {
-            if let Ok(_) = fs::remove_file(&pipe) {
-                println!("fn=main pipe={} at=deleted", pipe.display());
-            }
-        }
+    let mut pipe = std::path::PathBuf::new();
+    pipe.push(std::env::var("XDG_RUNTIME_DIR").unwrap_or("/run/user/1000".into()));
+    pipe.push("pks-ssh-agent.sock");
 
-        eprintln!("fn=main pipe={} at=bind", pipe.display());
-    */
-    let agent = Backend::default(); /* { loc:
-                                                                                  std::sync::Arc::new(
-                                                                                      std::sync::Mutex::new(
-                                                                                      std::cell::RefCell::new(None)
-                                                                                          ))
-                                    };*/
+    if std::fs::metadata(&pipe).is_ok() && std::fs::remove_file(&pipe).is_ok() {
+        println!("fn=main pipe={} at=deleted", pipe.display());
+    }
+
+    eprintln!("fn=main pipe={} at=bind", pipe.display());
+
+    let agent = Backend::default();
+    match agent.run_unix(&pipe) {
+        Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
+        Ok(_) => eprintln!("Listening done!"),
+    }
+
+    /* { loc:
+                                                  std::sync::Arc::new(
+                                                      std::sync::Mutex::new(
+                                                      std::cell::RefCell::new(None)
+                                                          ))
+    };*/
     //let mut listenfd = listenfd::ListenFd::from_env();
 
     //if let Some(listener) = listenfd.take_tcp_listener(0).unwrap() {
     //let listen_fds: std::os::unix::io::RawFd = std::env::var("LISTEN_FDS").unwrap().parse().unwrap();
     //eprintln!("LISTEN_FD is <{}>", listen_fds);
     //let fds = systemd_socket::listen_fds(true).unwrap();
-    use std::os::unix::io::FromRawFd;
-    let listener = unsafe { std::net::TcpListener::from_raw_fd(0) };
-    match agent.run_listener(listener) {
-        Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
-        Ok(_) => eprintln!("Listening done!"),
-    }
-
     /*
-        } else {
-        match agent.run_unix(&pipe) {
-            Err(e) => eprintln!("fn=main pipe={} at=bind err={:?}", pipe.display(), e),
-            Ok(_) => {}
+        use std::os::unix::io::FromRawFd;
+        let listener = unsafe { std::net::TcpListener::from_raw_fd(0) };
+        match agent.run_listener(listener) {
+            Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
+            Ok(_) => eprintln!("Listening done!"),
         }
-        }
+
+        /*
+            } else {
+            match agent.run_unix(&pipe) {
+                Err(e) => eprintln!("fn=main pipe={} at=bind err={:?}", pipe.display(), e),
+                Ok(_) => {}
+            }
+            }
+        */
     */
-    //eprintln!("fn=main pipe={} at=finished", pipe.display());
+    eprintln!("fn=main pipe={} at=finished", pipe.display());
     eprintln!("Exiting...");
 }
