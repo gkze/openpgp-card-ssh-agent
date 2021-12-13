@@ -22,6 +22,14 @@ The key fingerprint must point to the authorization key. You can get it via:
 gpg -K --with-subkey-fingerprints
 ```
 
+Or using endpoints of the store (this is store specific):
+```
+$ curl localhost:3000/keys
+E7E2B84A36457BEA3F43692DE68BE3B312FA33FC # 0006:15422467 S
+F99A81E09CD8814B571DBF4AEB0BE68CD9CF08F1 # 0006:15422467 E
+3BA4FE02BF714A7789CB2E0051F23D6C0529CE0A # 0006:15422467 A
+```
+
 Enter the PIN to the card. The agent will verify that and if it's OK add the key (in reality it will get the capability URL and memorize that).
 
 and then the regular ssh will work:
