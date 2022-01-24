@@ -222,9 +222,9 @@ pub enum BackendError {
     Unknown(String),
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
-
+    /*
     let mut pipe = std::path::PathBuf::new();
     pipe.push(std::env::var("XDG_RUNTIME_DIR").unwrap_or("/run/user/1000".into()));
     pipe.push("pks-ssh-agent.sock");
@@ -233,14 +233,24 @@ fn main() {
         println!("fn=main pipe={} at=deleted", pipe.display());
     }
 
-    eprintln!("fn=main pipe={} at=bind", pipe.display());
+    eprintln!("fn=main pipe={} at=bind", pipe.display());*/
+    eprintln!("running!");
 
-    let agent = Backend::default();
-    match agent.run_unix(&pipe) {
-        Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
-        Ok(_) => eprintln!("Listening done!"),
+    if let Ok(fds) = std::env::var("LISTEN_FDS") {
+        use std::os::unix::io::FromRawFd;
+        eprintln!("GOT: {}", fds);
+        let fds: i32 = fds.parse()?;
+        let listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(fds + 2) };
+        listener.set_nonblocking(true)?;
+        let handle = tokio_reactor::Handle::default();
+        let listener = tokio_uds::UnixListener::from_std(listener, &handle)?;
+
+        let agent = Backend::default();
+        match agent.run_listener(listener) {
+            Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
+            Ok(_) => eprintln!("Listening done!"),
+        }
     }
-
     /* { loc:
                                                   std::sync::Arc::new(
                                                       std::sync::Mutex::new(
@@ -270,6 +280,7 @@ fn main() {
             }
         */
     */
-    eprintln!("fn=main pipe={} at=finished", pipe.display());
+    //eprintln!("fn=main pipe={} at=finished", pipe.display());
     eprintln!("Exiting...");
+    Ok(())
 }

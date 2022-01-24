@@ -763,19 +763,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12295df4f294471248581bc09bef3c38a5e46f1e36d6a37353621a0c6c357e1f"
 
 [[package]]
-name = "pks-ssh-agent"
-version = "0.1.0"
-dependencies = [
- "base64",
- "env_logger",
- "hyper",
- "hyper-tls",
- "openssh-keys",
- "ssh-agent",
- "tokio 1.13.0",
-]
-
-[[package]]
 name = "ppv-lite86"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1019,8 +1006,7 @@ dependencies = [
 [[package]]
 name = "ssh-agent"
 version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b43cbac10685c313df69148165214d3b4769b6615209ca38e28f59774a65be3f"
+source = "git+https://github.com/sekey/ssh-agent.rs?rev=refs/pull/28/head#68c5a7b09e11a463390036786773644ca523c5dd"
 dependencies = [
  "byteorder",
  "bytes 0.4.12",
@@ -1028,6 +1014,21 @@ dependencies = [
  "log",
  "serde",
  "tokio 0.1.22",
+ "tokio-uds",
+]
+
+[[package]]
+name = "ssh-agent-pks"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "env_logger",
+ "hyper",
+ "hyper-tls",
+ "openssh-keys",
+ "ssh-agent",
+ "tokio 1.13.0",
+ "tokio-reactor",
  "tokio-uds",
 ]
 
