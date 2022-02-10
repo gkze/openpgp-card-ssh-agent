@@ -13,6 +13,8 @@ echo Starting SSH server...
 
 echo Starting PKS agent...
 
+export PKS_SOCK=/run/user/1000/pks-dummy.sock
+
 /socket-activate.py --unix:label=ssh:/run/ssh-agent-pks.sock /app/target/debug/ssh-agent-pks &
 sleep 1
 ls -la /run
@@ -30,4 +32,4 @@ export SSH_ASKPASS=/app/ssh-askpass.sh
 
 ssh-add -vvv -L
 
-ssh-add -s http://localhost:8080/xxx
+ssh-add -s /xxxx

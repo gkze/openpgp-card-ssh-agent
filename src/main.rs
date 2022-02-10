@@ -97,7 +97,7 @@ impl ssh_agent::agent::Agent for Backend {
                 }]))
             }
             Message::AddSmartcardKey(key) => {
-                eprintln!("KEY => {:?}", key);
+                eprintln!("AddSmartcardKey -> {}", key.id);
                 let id = &key.id;
                 let pin = key.pin;
 
@@ -118,6 +118,7 @@ impl ssh_agent::agent::Agent for Backend {
                     .body(Body::from(pin))
                     .unwrap();
                 let response = rt.block_on(client.request(request)).unwrap();
+                eprintln!("AddSmartcardKey = {}", response.status());
 
                 if !response.status().is_success() {
                     return Err(BackendError::Unknown("badbad".to_string()));
@@ -133,6 +134,7 @@ impl ssh_agent::agent::Agent for Backend {
                 let loc = loc.lock().unwrap();
 
                 loc.replace(Some(location.to_string()));
+                eprintln!("AddSmartcardKey <- {}", location);
 
                 let public = std::sync::Arc::clone(&self.public);
                 let public = public.lock().unwrap();
