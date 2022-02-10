@@ -170,7 +170,7 @@ impl ssh_agent::agent::Agent for Backend {
                     .build()
                     .unwrap();
 
-                let location = Uri::new(std::env::var("PKS_SOCK").unwrap(), &location);
+                let location: hyper::Uri = location.parse().unwrap();
                 let client = Client::unix();
 
                 let request = Request::builder()
