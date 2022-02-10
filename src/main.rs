@@ -5,7 +5,7 @@ use ssh_agent::proto::Blob;
 use ssh_agent::proto::{message::Identity, Message};
 
 use hyper::{Body, Client, Request};
-use hyper_tls::HttpsConnector;
+use hyperlocal::{UnixClientExt, Uri};
 
 #[derive(Default)]
 struct Backend {
@@ -40,7 +40,8 @@ impl ssh_agent::agent::Agent for Backend {
                     return Ok(Message::Failure);
                 };
 
-                let client = Client::builder().build(HttpsConnector::new());
+                let public = Uri::new(std::env::var("PKS_SOCK").unwrap(), &public);
+                let client = Client::unix();
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_io()
                     .enable_time()
@@ -108,7 +109,8 @@ impl ssh_agent::agent::Agent for Backend {
                     .build()
                     .unwrap();
 
-                let client = Client::builder().build(HttpsConnector::new());
+                let location = Uri::new(std::env::var("PKS_SOCK").unwrap(), &location);
+                let client = Client::unix();
 
                 let request = Request::builder()
                     .method("POST")
@@ -166,7 +168,8 @@ impl ssh_agent::agent::Agent for Backend {
                     .build()
                     .unwrap();
 
-                let client = Client::builder().build(HttpsConnector::new());
+                let location = Uri::new(std::env::var("PKS_SOCK").unwrap(), &location);
+                let client = Client::unix();
 
                 let request = Request::builder()
                     .method("POST")
