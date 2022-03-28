@@ -1,8 +1,6 @@
-use ssh_agent::agent::Agent;
-//use std::{fs, path::Path};
-
-use ssh_agent::proto::Blob;
-use ssh_agent::proto::{message::Identity, Message};
+use ssh_agent_lib::agent::Agent;
+use ssh_agent_lib::proto::Blob;
+use ssh_agent_lib::proto::{message::Identity, Message};
 
 use hyper::{Body, Client, Request};
 use hyperlocal::{UnixClientExt, Uri};
@@ -13,7 +11,7 @@ struct Backend {
     public: std::sync::Arc<std::sync::Mutex<std::cell::RefCell<Option<String>>>>,
 }
 
-impl ssh_agent::agent::Agent for Backend {
+impl Agent for Backend {
     type Error = BackendError;
 
     fn handle(&self, request: Message) -> Result<Message, Self::Error> {
@@ -209,7 +207,7 @@ impl ssh_agent::agent::Agent for Backend {
                 };
 
                 Ok(Message::SignResponse(
-                    (ssh_agent::proto::signature::Signature {
+                    (ssh_agent_lib::proto::signature::Signature {
                         algorithm: algorithm.to_string(),
                         blob: signature,
                     })
@@ -217,7 +215,7 @@ impl ssh_agent::agent::Agent for Backend {
                     .unwrap(),
                 ))
             }
-            _ => Ok(Message::Failure)
+            _ => Ok(Message::Failure),
         }
     }
 }

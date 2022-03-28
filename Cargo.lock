@@ -866,9 +866,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "ssh-agent"
+name = "ssh-agent-lib"
 version = "0.2.3"
-source = "git+https://github.com/sekey/ssh-agent.rs?rev=refs/pull/28/head#68c5a7b09e11a463390036786773644ca523c5dd"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf82afcc0691790cb4a2dbc1540b9e2a26a06c5f399ad5bdfa72f2604794b8d1"
 dependencies = [
  "byteorder",
  "bytes 0.4.12",
@@ -888,7 +889,7 @@ dependencies = [
  "hyper",
  "hyperlocal",
  "openssh-keys",
- "ssh-agent",
+ "ssh-agent-lib",
  "tokio 1.13.0",
  "tokio-reactor",
  "tokio-uds",
