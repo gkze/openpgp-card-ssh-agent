@@ -217,7 +217,7 @@ impl ssh_agent::agent::Agent for Backend {
                     .unwrap(),
                 ))
             }
-            _ => Err(BackendError::Unknown("bad".to_string())),
+            _ => Ok(Message::Failure)
         }
     }
 }
