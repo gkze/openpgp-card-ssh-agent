@@ -153,13 +153,15 @@ impl Agent for Backend {
                     "application/octet-stream"
                 };
 
-                let loc = std::sync::Arc::clone(&self.loc);
-                let loc = loc.lock().unwrap();
-                let loc = loc.borrow();
-                let location = if let Some(loc) = &*loc {
-                    loc.to_string()
-                } else {
-                    return Ok(Message::Failure);
+                let location = {
+                    let loc = std::sync::Arc::clone(&self.loc);
+                    let loc = loc.lock().unwrap();
+                    let loc = loc.borrow();
+                    if let Some(loc) = &*loc {
+                        loc.to_string()
+                    } else {
+                        return Ok(Message::Failure);
+                    }
                 };
 
                 let rt = tokio::runtime::Builder::new_current_thread()
