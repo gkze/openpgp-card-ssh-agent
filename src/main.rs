@@ -25,18 +25,22 @@ impl Agent for Backend {
         //        .unwrap(); // auth key
         match request {
             Message::RequestIdentities => {
-                let public = std::sync::Arc::clone(&self.public);
-                let public = public.lock().unwrap();
-                let public = public.borrow();
-                if public.is_none() {
-                    eprintln!("No identities.");
-                    return Ok(Message::IdentitiesAnswer(vec![]));
-                }
-                let public = if let Some(public) = &*public {
-                    public.to_string()
-                } else {
-                    return Ok(Message::Failure);
+                let public = {
+                    let public = std::sync::Arc::clone(&self.public);
+                    let public = public.lock().unwrap();
+                    let public = public.borrow();
+                    if public.is_none() {
+                        eprintln!("No identities.");
+                        return Ok(Message::IdentitiesAnswer(vec![]));
+                    }
+                    if let Some(public) = &*public {
+                        public.to_string()
+                    } else {
+                        return Ok(Message::Failure);
+                    }
                 };
+
+                eprintln!("Getting {}...", public);
 
                 let public = Uri::new(std::env::var("PKS_SOCK").unwrap(), &public);
                 let client = Client::unix();
