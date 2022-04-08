@@ -1,4 +1,4 @@
 [Service]
-ExecStart=/usr/bin/ssh-agent-pks
+ExecStart=/usr/bin/ssh-agent-pks -H fd://
 Environment=RUST_LOG=debug
 Environment=PKS_SOCK=%t/pks-openpgp-card.sock

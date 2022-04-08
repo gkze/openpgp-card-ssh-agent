@@ -111,7 +111,7 @@ impl Agent for Backend {
                     .build()
                     .unwrap();
 
-                let location = Uri::new(std::env::var("PKS_SOCK").unwrap(), &location);
+                let location = Uri::new(std::env::var("PKS_SOCK").unwrap(), location);
                 let client = Client::unix();
 
                 let request = Request::builder()
@@ -231,65 +231,37 @@ pub enum BackendError {
     Unknown(String),
 }
 
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+struct Args {
+    #[clap(short = 'H', long)]
+    host: String,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
-    /*
-    let mut pipe = std::path::PathBuf::new();
-    pipe.push(std::env::var("XDG_RUNTIME_DIR").unwrap_or("/run/user/1000".into()));
-    pipe.push("pks-ssh-agent.sock");
 
-    if std::fs::metadata(&pipe).is_ok() && std::fs::remove_file(&pipe).is_ok() {
-        println!("fn=main pipe={} at=deleted", pipe.display());
-    }
+    let args = Args::parse();
 
-    eprintln!("fn=main pipe={} at=bind", pipe.display());*/
-    eprintln!("running!");
+    use service_listener::Service;
 
-    if let Ok(fds) = std::env::var("LISTEN_FDS") {
-        use std::os::unix::io::FromRawFd;
-        eprintln!("GOT: {}", fds);
-        let fds: i32 = fds.parse()?;
-        let listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(fds + 2) };
-        listener.set_nonblocking(true)?;
-        let handle = tokio_reactor::Handle::default();
-        let listener = tokio_uds::UnixListener::from_std(listener, &handle)?;
+    let service: Service = args.host.parse().unwrap();
 
-        let agent = Backend::default();
-        match agent.run_listener(listener) {
-            Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
-            Ok(_) => eprintln!("Listening done!"),
+    match service {
+        Service::UnixListener(listener) => {
+            let handle = tokio_reactor::Handle::default();
+            let listener = tokio_uds::UnixListener::from_std(listener, &handle)?;
+
+            let agent = Backend::default();
+            match agent.run_listener(listener) {
+                Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
+                Ok(_) => eprintln!("Listening done!"),
+            }
+        }
+        _ => {
+            panic!("Unsupported configuration.");
         }
     }
-    /* { loc:
-                                                  std::sync::Arc::new(
-                                                      std::sync::Mutex::new(
-                                                      std::cell::RefCell::new(None)
-                                                          ))
-    };*/
-    //let mut listenfd = listenfd::ListenFd::from_env();
-
-    //if let Some(listener) = listenfd.take_tcp_listener(0).unwrap() {
-    //let listen_fds: std::os::unix::io::RawFd = std::env::var("LISTEN_FDS").unwrap().parse().unwrap();
-    //eprintln!("LISTEN_FD is <{}>", listen_fds);
-    //let fds = systemd_socket::listen_fds(true).unwrap();
-    /*
-        use std::os::unix::io::FromRawFd;
-        let listener = unsafe { std::net::TcpListener::from_raw_fd(0) };
-        match agent.run_listener(listener) {
-            Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
-            Ok(_) => eprintln!("Listening done!"),
-        }
-
-        /*
-            } else {
-            match agent.run_unix(&pipe) {
-                Err(e) => eprintln!("fn=main pipe={} at=bind err={:?}", pipe.display(), e),
-                Ok(_) => {}
-            }
-            }
-        */
-    */
-    //eprintln!("fn=main pipe={} at=finished", pipe.display());
-    eprintln!("Exiting...");
     Ok(())
 }
