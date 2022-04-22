@@ -15,7 +15,7 @@ echo Starting PKS agent...
 
 export PKS_SOCK=/run/user/1000/pks-dummy.sock
 
-/socket-activate.py --unix:label=ssh:/run/ssh-agent-pks.sock /app/target/debug/ssh-agent-pks &
+/app/target/debug/ssh-agent-pks -H unix:///run/ssh-agent-pks.sock &
 sleep 1
 ls -la /run
 
