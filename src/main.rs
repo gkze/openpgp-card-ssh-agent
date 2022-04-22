@@ -14,7 +14,10 @@ struct Backend {
 
 impl Backend {
     fn new(endpoint: String) -> Self {
-        Self { endpoint, ..Default::default() }
+        Self {
+            endpoint,
+            ..Default::default()
+        }
     }
 }
 
