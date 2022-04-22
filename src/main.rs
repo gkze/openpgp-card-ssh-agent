@@ -244,24 +244,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    use service_listener::Service;
+    use service_binding::Listener;
 
-    let service: Service = args.host.parse().unwrap();
-
-    match service {
-        Service::UnixListener(listener) => {
-            let handle = tokio_reactor::Handle::default();
-            let listener = tokio_uds::UnixListener::from_std(listener, &handle)?;
-
-            let agent = Backend::default();
-            match agent.run_listener(listener) {
-                Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
-                Ok(_) => eprintln!("Listening done!"),
-            }
-        }
-        _ => {
-            panic!("Unsupported configuration.");
-        }
+    let agent = Backend::default();
+    match agent.listen(args.host.parse::<Listener>()?) {
+        Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
+        Ok(_) => eprintln!("Listening done!"),
     }
+
     Ok(())
 }

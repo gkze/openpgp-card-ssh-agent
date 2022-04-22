@@ -882,8 +882,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "service-listener"
-version = "0.1.0"
+name = "service-binding"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42112919a79d755094d2e2ac6ba3b632e5cda6a99c26430ebf9e78aa4924d1d8"
 
 [[package]]
 name = "sha2"
@@ -941,14 +943,13 @@ dependencies = [
 [[package]]
 name = "ssh-agent-lib"
 version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf82afcc0691790cb4a2dbc1540b9e2a26a06c5f399ad5bdfa72f2604794b8d1"
 dependencies = [
  "byteorder",
  "bytes 0.4.12",
  "futures",
  "log",
  "serde",
+ "service-binding",
  "tokio 0.1.22",
  "tokio-uds",
 ]
@@ -963,7 +964,7 @@ dependencies = [
  "hyper",
  "hyperlocal",
  "openssh-keys",
- "service-listener",
+ "service-binding",
  "ssh-agent-lib",
  "tokio 1.13.0",
  "tokio-reactor",
