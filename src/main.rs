@@ -7,8 +7,15 @@ use hyperlocal::{UnixClientExt, Uri};
 
 #[derive(Default)]
 struct Backend {
+    endpoint: String,
     loc: std::sync::Arc<std::sync::Mutex<std::cell::RefCell<Option<String>>>>,
     public: std::sync::Arc<std::sync::Mutex<std::cell::RefCell<Option<String>>>>,
+}
+
+impl Backend {
+    fn new(endpoint: String) -> Self {
+        Self { endpoint, ..Default::default() }
+    }
 }
 
 impl Agent for Backend {
@@ -42,7 +49,7 @@ impl Agent for Backend {
 
                 eprintln!("Getting {}...", public);
 
-                let public = Uri::new(std::env::var("PKS_SOCK").unwrap(), &public);
+                let public = Uri::new(&self.endpoint, &public);
                 let client = Client::unix();
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_io()
@@ -111,7 +118,7 @@ impl Agent for Backend {
                     .build()
                     .unwrap();
 
-                let location = Uri::new(std::env::var("PKS_SOCK").unwrap(), location);
+                let location = Uri::new(&self.endpoint, location);
                 let client = Client::unix();
 
                 let request = Request::builder()
@@ -235,8 +242,16 @@ use clap::Parser;
 
 #[derive(Parser, Debug)]
 struct Args {
+    /// Specifies the target binding host for the listener.
+    /// Commonly used options are: `unix:///tmp/socket` for Unix domain socket
+    /// or `fd://` for systemd socket activation.
     #[clap(short = 'H', long)]
     host: String,
+
+    /// Indicates target Private Key Store endpoint.
+    /// Currently this is a path to the Unix domain socket of the PKS server.
+    #[clap(short, long, env = "PKS_SOCK")]
+    endpoint: String,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -246,7 +261,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     use service_binding::Listener;
 
-    let agent = Backend::default();
+    let agent = Backend::new(args.endpoint);
     match agent.listen(args.host.parse::<Listener>()?) {
         Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
         Ok(_) => eprintln!("Listening done!"),
