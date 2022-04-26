@@ -18,3 +18,4 @@ tokio-reactor = { version = "0.1.1" }
 ssh-agent-lib = "0.2.4"
 service-binding = "0.1.1"
 clap = { version = "3.1", features = ["derive", "env"] }
+sha2 = "0.10"

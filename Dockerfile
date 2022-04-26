@@ -1,11 +1,9 @@
 FROM rust
 
-RUN apt update && apt install -y openssh-server
+RUN apt update && apt install -y openssh-server \
+    clang make pkg-config nettle-dev libssl-dev capnproto
 
-RUN curl -o socket-activate.py "https://gitlab.com/dkg/socket-activate/-/raw/master/socket_activate/__main__.py?inline=false"
-RUN chmod +x socket-activate.py
-
-RUN cargo install --git https://gitlab.com/wiktor/pks-dummy.git --rev 395ddd3
+RUN cargo install --git https://gitlab.com/wiktor/pks-soft.git --rev 78b0567
 
 COPY Cargo.toml Cargo.lock /app/
 WORKDIR /app
@@ -18,5 +16,6 @@ RUN rm src/main.rs
 COPY src /app/src
 RUN cargo build
 
-COPY test.sh ssh-askpass.sh /app/
+COPY tests /app/tests
+WORKDIR /app/tests
 RUN ./test.sh
