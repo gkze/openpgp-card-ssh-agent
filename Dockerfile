@@ -3,7 +3,7 @@ FROM rust
 RUN apt update && apt install -y openssh-server \
     clang make pkg-config nettle-dev libssl-dev capnproto
 
-RUN cargo install --git https://gitlab.com/wiktor/pks-soft.git --rev 78b0567
+RUN cargo install --git https://gitlab.com/wiktor/pks-soft.git --rev bb57d56
 
 COPY Cargo.toml Cargo.lock /app/
 WORKDIR /app
