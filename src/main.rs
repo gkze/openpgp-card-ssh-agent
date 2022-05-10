@@ -254,6 +254,7 @@ pub enum BackendError {
 }
 
 use clap::Parser;
+use service_binding::Binding;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -261,7 +262,7 @@ struct Args {
     /// Commonly used options are: `unix:///tmp/socket` for Unix domain socket
     /// or `fd://` for systemd socket activation.
     #[clap(short = 'H', long)]
-    host: String,
+    host: Binding,
 
     /// Indicates target Private Key Store endpoint.
     /// Currently this is a path to the Unix domain socket of the PKS server.
@@ -274,10 +275,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    use service_binding::Listener;
-
     let agent = Backend::new(args.endpoint);
-    match agent.listen(args.host.parse::<Listener>()?) {
+    match agent.listen(args.host.try_into()?) {
         Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
         Ok(_) => eprintln!("Listening done!"),
     }

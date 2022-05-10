@@ -912,9 +912,9 @@ dependencies = [
 
 [[package]]
 name = "service-binding"
-version = "0.1.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42112919a79d755094d2e2ac6ba3b632e5cda6a99c26430ebf9e78aa4924d1d8"
+checksum = "2eb9742e5a243ab215b48acc84f23635c1ac34004e99b27754b6cedfd1a4be6a"
 
 [[package]]
 name = "sha2"
@@ -982,9 +982,9 @@ dependencies = [
 
 [[package]]
 name = "ssh-agent-lib"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7e1650ae721b6f010a9ed3b1d5b78d9e6be527f5c2c9565b24fa57c17d2993a"
+checksum = "aae96d38241e2d446adb444bc25d9618b7b10af1e8e1205ccb1a42eed8dd2d42"
 dependencies = [
  "byteorder",
  "bytes 0.4.12",
