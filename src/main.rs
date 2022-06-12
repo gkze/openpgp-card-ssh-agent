@@ -228,8 +228,8 @@ impl Agent for Backend {
                         algorithm: algorithm.to_string(),
                         blob: signature,
                     })
-                        .to_blob()
-                        .unwrap(),
+                    .to_blob()
+                    .unwrap(),
                 ))
             }
             _ => Ok(Message::Failure),
