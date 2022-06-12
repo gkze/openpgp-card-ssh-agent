@@ -156,12 +156,23 @@ impl Agent for Backend {
                 Ok(Message::Success)
             }
             Message::SignRequest(request) => {
+                use sha2::{Digest, Sha256, Sha512};
+
                 const SSH_AGENT_RSA_SHA2_256: u32 = 2;
                 const SSH_AGENT_RSA_SHA2_512: u32 = 4;
+
                 let (content_type, body) = if request.flags & SSH_AGENT_RSA_SHA2_256 != 0 {
-                    ("application/vnd.pks.digest.sha256", request.data)
+                    let mut hasher = Sha256::new();
+                    hasher.update(&request.data);
+                    let body = hasher.finalize().to_vec();
+
+                    ("application/vnd.pks.digest.sha256", body)
                 } else if request.flags & SSH_AGENT_RSA_SHA2_512 != 0 {
-                    ("application/vnd.pks.digest.sha512", request.data)
+                    let mut hasher = Sha512::new();
+                    hasher.update(&request.data);
+                    let body = hasher.finalize().to_vec();
+
+                    ("application/vnd.pks.digest.sha512", body)
                 } else {
                     // raw message to be hashed and signed
                     // likely ed25519
