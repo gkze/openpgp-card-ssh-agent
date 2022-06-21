@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 base64 = "0.13.0"
 openssh-keys = "0.5.0"
+sshkeys = "0.3.2"
+
 hyper = { version = "0.14.14", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
 #hyper-tls = "0.5.0"
@@ -19,3 +21,7 @@ ssh-agent-lib = "0.2.5"
 service-binding = "^0.3.0"
 clap = { version = "3.1", features = ["derive", "env"] }
 sha2 = "0.10"
+
+sequoia-openpgp = "1.9"
+sequoia-keystore-ocard = { path = "../sequoia-keystore/ocard" }
+sequoia-keystore-backend = { path = "../sequoia-keystore/backend" }
