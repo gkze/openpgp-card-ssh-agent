@@ -20,5 +20,5 @@ clap = { version = "3.1", features = ["derive", "env"] }
 sha2 = "0.10"
 
 sequoia-openpgp = "1.9"
-sequoia-keystore-ocard = { path = "../sequoia-keystore/ocard" }
-sequoia-keystore-backend = { path = "../sequoia-keystore/backend" }
+sequoia-keystore-ocard = { git = "https://gitlab.com/hkos/sequoia-keystore.git", branch = "ocard" }
+sequoia-keystore-backend = { git = "https://gitlab.com/hkos/sequoia-keystore.git", branch = "ocard" }
