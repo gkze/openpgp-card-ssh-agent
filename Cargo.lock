@@ -1982,6 +1982,7 @@ dependencies = [
  "env_logger",
  "hyper",
  "hyperlocal",
+ "log",
  "openssh-keys",
  "sequoia-keystore-backend",
  "sequoia-keystore-ocard",

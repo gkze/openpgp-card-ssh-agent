@@ -41,13 +41,13 @@ impl Agent for Backend {
     type Error = BackendError;
 
     fn handle(&self, request: Message) -> Result<Message, Self::Error> {
-        eprintln!("-> {:X?}", request);
+        log::trace!("handle: request {:X?}", request);
 
         match request {
             Message::AddSmartcardKey(key) => {
                 // When running "ssh-add -s", this call gives us an `id` and a `pin`
 
-                eprintln!("AddSmartcardKey -> {}", key.id);
+                log::debug!("AddSmartcardKey -> {}", key.id);
                 let id = &key.id;
                 let pin = key.pin;
 
@@ -71,17 +71,19 @@ impl Agent for Backend {
 
                 public.replace(Some(pubkey));
 
-                eprintln!("AddSmartcardKey <-");
+                log::debug!("AddSmartcardKey <-");
 
                 Ok(Message::Success)
             }
             Message::RequestIdentities => {
+                log::debug!("RequestIdentities");
+
                 let public = {
                     let public = std::sync::Arc::clone(&self.public);
                     let public = public.lock().unwrap();
                     let public = public.borrow();
                     if public.is_none() {
-                        eprintln!("No identities.");
+                        log::debug!("No identities.");
                         return Ok(Message::IdentitiesAnswer(vec![]));
                     }
                     if let Some(public) = public.clone() {
@@ -91,7 +93,7 @@ impl Agent for Backend {
                     }
                 };
 
-                eprintln!("Offering Identity {:?}...", public);
+                log::debug!("Offering Identity {:?}...", public);
 
                 let pubkey_blob = if let Key::V4(k) = public {
                     match (k.pk_algo(), k.mpis()) {
@@ -142,7 +144,7 @@ impl Agent for Backend {
             }
 
             Message::SignRequest(request) => {
-                println!("sign req");
+                log::debug!("-> SignRequest");
 
                 use sha2::{Digest, Sha256, Sha512};
 
@@ -213,7 +215,7 @@ impl Agent for Backend {
                 //     .to_vec();
                 //
                 // //let signature = vec![];
-                // eprintln!("SIG: {:?} ({})", signature, signature.len());
+                // log::debug!("SIG: {:?} ({})", signature, signature.len());
                 // let algorithm = if response_type == "application/vnd.pks.signature.rsa" {
                 //     if content_type == "application/vnd.pks.digest.sha256" {
                 //         "rsa-sha2-256"
@@ -261,8 +263,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let agent = Backend::new(ocard);
     match agent.listen(args.host.try_into()?) {
-        Err(e) => eprintln!("fn=main listener=OK at=bind err={:?}", e),
-        Ok(_) => eprintln!("Listening done!"),
+        Err(e) => log::debug!("fn=main listener=OK at=bind err={:?}", e),
+        Ok(_) => log::debug!("Listening done!"),
     }
 
     Ok(())
