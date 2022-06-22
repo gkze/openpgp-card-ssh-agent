@@ -119,6 +119,8 @@ impl Agent for Backend {
                 }
             }
             Message::RequestIdentities => {
+                // This is triggered by "ssh-add -L" (and during login operations)
+
                 log::debug!("RequestIdentities");
 
                 let keys = Arc::clone(&self.keys);
@@ -139,6 +141,9 @@ impl Agent for Backend {
             }
 
             Message::SignRequest(request) => {
+                // This is triggered during ssh logins, if the remote server
+                // knows any of the identities we report in RequestIdentities.
+
                 log::debug!("-> SignRequest");
 
                 // FIXME: we should sign with *this* key
