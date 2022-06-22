@@ -1,12 +1,11 @@
 use clap::Parser;
 use service_binding::Binding;
 
-use sequoia_openpgp::crypto::mpi::PublicKey;
+use sequoia_openpgp::crypto::mpi::{PublicKey, Signature};
 use sequoia_openpgp::crypto::Password;
 use sequoia_openpgp::packet::key::{PublicParts, UnspecifiedRole};
 use sequoia_openpgp::packet::Key;
-use sequoia_openpgp::serialize::MarshalInto;
-use sequoia_openpgp::types::{Curve, PublicKeyAlgorithm};
+use sequoia_openpgp::types::{Curve, HashAlgorithm, PublicKeyAlgorithm};
 
 use sequoia_keystore_backend::Backend as KeystoreBackend;
 
@@ -142,94 +141,74 @@ impl Agent for Backend {
             Message::SignRequest(request) => {
                 log::debug!("-> SignRequest");
 
+                // FIXME: we should sign with *this* key
+                // -> Store a mapping from pubkey blob to keystore key?
+                let _pubkey_blob = request.pubkey_blob;
+
                 use sha2::{Digest, Sha256, Sha512};
 
                 const SSH_AGENT_RSA_SHA2_256: u32 = 2;
                 const SSH_AGENT_RSA_SHA2_512: u32 = 4;
 
-                let (content_type, body) = if request.flags & SSH_AGENT_RSA_SHA2_256 != 0 {
+                let (content_type, digest) = if request.flags & SSH_AGENT_RSA_SHA2_256 != 0 {
                     let mut hasher = Sha256::new();
                     hasher.update(&request.data);
-                    let body = hasher.finalize().to_vec();
+                    let digest = hasher.finalize().to_vec();
 
-                    ("application/vnd.pks.digest.sha256", body)
+                    ("application/vnd.pks.digest.sha256", digest)
                 } else if request.flags & SSH_AGENT_RSA_SHA2_512 != 0 {
                     let mut hasher = Sha512::new();
                     hasher.update(&request.data);
-                    let body = hasher.finalize().to_vec();
+                    let digest = hasher.finalize().to_vec();
 
-                    ("application/vnd.pks.digest.sha512", body)
+                    ("application/vnd.pks.digest.sha512", digest)
                 } else {
                     // raw message to be hashed and signed
                     // likely ed25519
                     ("application/octet-stream", request.data)
                 };
 
-                unimplemented!();
+                let hash_algo = match content_type {
+                    "application/vnd.pks.digest.sha256" => HashAlgorithm::SHA256,
+                    "application/vnd.pks.digest.sha512" => HashAlgorithm::SHA512,
+                    _ => HashAlgorithm::SHA256, // FIXME?
+                };
 
-                // let location = {
-                //     let loc = std::sync::Arc::clone(&self.loc);
-                //     let loc = loc.lock().unwrap();
-                //     let loc = loc.borrow();
-                //     if let Some(loc) = &*loc {
-                //         loc.to_string()
-                //     } else {
-                //         return Ok(Message::Failure);
-                //     }
-                // };
-                //
-                // let rt = tokio::runtime::Builder::new_current_thread()
-                //     .enable_io()
-                //     .enable_time()
-                //     .build()
-                //     .unwrap();
-                //
-                // let location: hyper::Uri = location.parse().unwrap();
-                // let client = Client::unix();
-                //
-                // let request = Request::builder()
-                //     .method("POST")
-                //     .uri(location)
-                //     .header("Content-Type", content_type)
-                //     .body(Body::from(body))
-                //     .unwrap();
-                // let response = rt.block_on(client.request(request)).unwrap();
-                //
-                // if !response.status().is_success() {
-                //     return Err(BackendError::Unknown("badbad".to_string()));
-                // }
-                //
-                // let response_type = response
-                //     .headers()
-                //     .get("Content-Type")
-                //     .and_then(|v| v.to_str().ok())
-                //     .unwrap_or("application/octet-stream")
-                //     .to_string();
-                // let signature = rt
-                //     .block_on(hyper::body::to_bytes(response))
-                //     .unwrap()
-                //     .to_vec();
-                //
-                // //let signature = vec![];
-                // log::debug!("SIG: {:?} ({})", signature, signature.len());
-                // let algorithm = if response_type == "application/vnd.pks.signature.rsa" {
-                //     if content_type == "application/vnd.pks.digest.sha256" {
-                //         "rsa-sha2-256"
-                //     } else {
-                //         "rsa-sha2-512"
-                //     }
-                // } else {
-                //     "ssh-ed25519"
-                // };
-                //
-                // Ok(Message::SignResponse(
-                //     (ssh_agent_lib::proto::signature::Signature {
-                //         algorithm: algorithm.to_string(),
-                //         blob: signature,
-                //     })
-                //         .to_blob()
-                //         .unwrap(),
-                // ))
+                // FIXME: keystore key should be looked up by ssh pubkey blob?
+                let ident = std::sync::Arc::clone(&self.ident);
+                let ident = ident.lock().unwrap();
+                let id = ident.borrow().clone();
+                let mut key = (*self.ocard).find_key(&id.unwrap()).expect("find key");
+
+                let signature = key.sign(hash_algo, &digest).expect("unlock");
+
+                log::debug!("SIG: {:?}", signature);
+
+                let (algorithm, data) = match signature {
+                    Signature::RSA { ref s } => match content_type {
+                        "application/vnd.pks.digest.sha256" => ("rsa-sha2-256", s.value().to_vec()),
+                        "application/vnd.pks.digest.sha512" => ("rsa-sha2-512", s.value().to_vec()),
+                        _ => unimplemented!(),
+                    },
+                    Signature::EdDSA { ref r, ref s } => {
+                        // FIXME
+                        let mut v = vec![];
+                        v.append(&mut r.value().to_vec());
+                        v.append(&mut s.value().to_vec());
+
+                        ("ssh-ed25519", v)
+                    }
+                    _ => unimplemented!(),
+                };
+
+                let s = ssh_agent_lib::proto::signature::Signature {
+                    algorithm: algorithm.to_string(),
+                    blob: data,
+                };
+
+                log::trace!("ssh signature: {:?} [len {}]", s, s.blob.len());
+
+                Ok(Message::SignResponse((s).to_blob().unwrap()))
             }
             _ => Ok(Message::Failure),
         }
