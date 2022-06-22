@@ -1,7 +1,7 @@
 use clap::Parser;
 use service_binding::Binding;
-use std::borrow::BorrowMut;
-use std::cell::RefCell;
+use std::borrow::{Borrow, BorrowMut};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use sequoia_openpgp::crypto::mpi::{PublicKey, Signature};
@@ -10,7 +10,7 @@ use sequoia_openpgp::packet::key::{PublicParts, UnspecifiedRole};
 use sequoia_openpgp::packet::Key;
 use sequoia_openpgp::types::{Curve, HashAlgorithm, PublicKeyAlgorithm};
 
-use sequoia_keystore_backend::Backend as KeystoreBackend;
+use sequoia_keystore_backend::{Backend as KeystoreBackend, KeyHandle};
 
 use ssh_agent_lib::agent::Agent;
 use ssh_agent_lib::proto::Blob;
@@ -20,19 +20,15 @@ struct Backend {
     // OpenPGP card keystore backend
     ocard: Arc<Mutex<Box<sequoia_keystore_ocard::Backend>>>,
 
-    // Identity (authentication key fingerprint)
-    ident: Arc<Mutex<RefCell<Option<String>>>>,
-
-    // Public key
-    public: Arc<Mutex<RefCell<Option<Key<PublicParts, UnspecifiedRole>>>>>,
+    // Map: ssh pubkey_blob -> keystore Key
+    keys: Arc<Mutex<HashMap<Vec<u8>, Box<dyn KeyHandle + Send + Sync>>>>,
 }
 
 impl Backend {
     fn new(ocard: Box<sequoia_keystore_ocard::Backend>) -> Self {
         Self {
             ocard: Arc::new(Mutex::new(ocard)),
-            public: Default::default(),
-            ident: Default::default(),
+            keys: Default::default(),
         }
     }
 }
@@ -95,18 +91,24 @@ impl Agent for Backend {
 
                 if let Ok(mut key) = card.find_key(id) {
                     if key.unlock(&Password::from(pin.as_bytes())).is_ok() {
-                        let ident = Arc::clone(&self.ident);
-                        let ident = ident.lock().unwrap();
-                        ident.replace(Some(key.id()));
+                        if let Ok(pubkey) = key.public_key() {
+                            // Get ssh public key representation(s)
+                            let pk = key_to_ssh(&pubkey);
 
-                        let pubkey = key.public_key().expect("public key");
-                        let public = Arc::clone(&self.public);
-                        let public = public.lock().unwrap();
-                        public.replace(Some(pubkey));
+                            let pubkey_blob = pk.data();
 
-                        log::debug!("AddSmartcardKey <-");
+                            let keys = Arc::clone(&self.keys);
+                            let mut keys = keys.lock().unwrap();
+                            let keys = keys.borrow_mut();
+                            keys.insert(pubkey_blob.clone(), key);
 
-                        Ok(Message::Success)
+                            log::debug!("AddSmartcardKey <-");
+
+                            Ok(Message::Success)
+                        } else {
+                            log::debug!("Failed to get public key material from store");
+                            Ok(Message::Failure)
+                        }
                     } else {
                         log::debug!("Failed to unlock Key");
                         Ok(Message::Failure)
@@ -119,32 +121,21 @@ impl Agent for Backend {
             Message::RequestIdentities => {
                 log::debug!("RequestIdentities");
 
-                let public = {
-                    let public = Arc::clone(&self.public);
-                    let public = public.lock().unwrap();
-                    let public = public.borrow();
-                    if public.is_none() {
-                        log::debug!("No identities.");
-                        return Ok(Message::IdentitiesAnswer(vec![]));
-                    }
-                    if let Some(public) = public.clone() {
-                        public
-                    } else {
-                        return Ok(Message::Failure);
-                    }
-                };
+                let keys = Arc::clone(&self.keys);
+                let keys = keys.lock().unwrap();
+                let keys = keys.borrow();
 
-                // Get ssh public key representation(s)
-                let pk = key_to_ssh(&public);
+                let ids: Vec<_> = keys
+                    .keys()
+                    .map(|k| Identity {
+                        pubkey_blob: k.clone(),
+                        comment: "".to_string(),
+                    })
+                    .collect();
 
-                log::debug!("Offering Identity {}...", pk);
+                log::debug!("Offering Identities {:#?}...", ids);
 
-                let id = vec![Identity {
-                    pubkey_blob: pk.data(),
-                    comment: "".to_string(),
-                }];
-
-                Ok(Message::IdentitiesAnswer(id))
+                Ok(Message::IdentitiesAnswer(ids))
             }
 
             Message::SignRequest(request) => {
@@ -152,47 +143,42 @@ impl Agent for Backend {
 
                 // FIXME: we should sign with *this* key
                 // -> Store a mapping from pubkey blob to keystore key?
-                let _pubkey_blob = request.pubkey_blob;
+                let pubkey_blob = request.pubkey_blob;
 
-                use sha2::{Digest, Sha256, Sha512};
+                let keys = Arc::clone(&self.keys);
+                let mut keys = keys.lock().unwrap();
+                let keys = keys.borrow_mut();
 
-                const SSH_AGENT_RSA_SHA2_256: u32 = 2;
-                const SSH_AGENT_RSA_SHA2_512: u32 = 4;
+                if let Some(key) = keys.get_mut(&pubkey_blob) {
+                    use sha2::{Digest, Sha256, Sha512};
 
-                let (content_type, digest) = if request.flags & SSH_AGENT_RSA_SHA2_256 != 0 {
-                    let mut hasher = Sha256::new();
-                    hasher.update(&request.data);
-                    let digest = hasher.finalize().to_vec();
+                    const SSH_AGENT_RSA_SHA2_256: u32 = 2;
+                    const SSH_AGENT_RSA_SHA2_512: u32 = 4;
 
-                    ("application/vnd.pks.digest.sha256", digest)
-                } else if request.flags & SSH_AGENT_RSA_SHA2_512 != 0 {
-                    let mut hasher = Sha512::new();
-                    hasher.update(&request.data);
-                    let digest = hasher.finalize().to_vec();
+                    let (content_type, digest) = if request.flags & SSH_AGENT_RSA_SHA2_256 != 0 {
+                        let mut hasher = Sha256::new();
+                        hasher.update(&request.data);
+                        let digest = hasher.finalize().to_vec();
 
-                    ("application/vnd.pks.digest.sha512", digest)
-                } else {
-                    // raw message to be hashed and signed
-                    // likely ed25519
-                    ("application/octet-stream", request.data)
-                };
+                        ("application/vnd.pks.digest.sha256", digest)
+                    } else if request.flags & SSH_AGENT_RSA_SHA2_512 != 0 {
+                        let mut hasher = Sha512::new();
+                        hasher.update(&request.data);
+                        let digest = hasher.finalize().to_vec();
 
-                let hash_algo = match content_type {
-                    "application/vnd.pks.digest.sha256" => HashAlgorithm::SHA256,
-                    "application/vnd.pks.digest.sha512" => HashAlgorithm::SHA512,
-                    _ => HashAlgorithm::SHA256, // FIXME?
-                };
+                        ("application/vnd.pks.digest.sha512", digest)
+                    } else {
+                        // raw message to be hashed and signed
+                        // likely ed25519
+                        ("application/octet-stream", request.data)
+                    };
 
-                // FIXME: keystore key should be looked up by ssh pubkey blob?
-                let ident = Arc::clone(&self.ident);
-                let ident = ident.lock().unwrap();
-                let id = ident.borrow().clone();
+                    let hash_algo = match content_type {
+                        "application/vnd.pks.digest.sha256" => HashAlgorithm::SHA256,
+                        "application/vnd.pks.digest.sha512" => HashAlgorithm::SHA512,
+                        _ => HashAlgorithm::SHA256, // FIXME?
+                    };
 
-                let card = Arc::clone(&self.ocard);
-                let mut card = card.lock().unwrap();
-                let card = card.borrow_mut();
-
-                if let Ok(mut key) = card.find_key(&id.clone().unwrap()) {
                     if let Ok(signature) = key.sign(hash_algo, &digest) {
                         log::debug!("SIG: {:?}", signature);
 
@@ -227,11 +213,16 @@ impl Agent for Backend {
                         Ok(Message::SignResponse((s).to_blob().unwrap()))
                     } else {
                         log::debug!("Sign operation failed");
-                        // FIXME: we probably need to unlock this key again?
+
+                        // FIXME: what should we do? -> unlock this key again?
+                        log::debug!("Removing this key from the agent");
+
+                        keys.remove(&pubkey_blob);
+
                         Ok(Message::Failure)
                     }
                 } else {
-                    log::debug!("Failed to find Key '{}'", id.unwrap());
+                    log::debug!("Got a signing request for an identity we don't know about");
                     Ok(Message::Failure)
                 }
             }
