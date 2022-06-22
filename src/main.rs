@@ -6,7 +6,7 @@ use sequoia_openpgp::crypto::Password;
 use sequoia_openpgp::packet::key::{PublicParts, UnspecifiedRole};
 use sequoia_openpgp::packet::Key;
 use sequoia_openpgp::serialize::MarshalInto;
-use sequoia_openpgp::types::PublicKeyAlgorithm;
+use sequoia_openpgp::types::{Curve, PublicKeyAlgorithm};
 
 use sequoia_keystore_backend::Backend as KeystoreBackend;
 
@@ -34,6 +34,39 @@ impl Backend {
             public: Default::default(),
             ident: Default::default(),
         }
+    }
+}
+
+/// Get SSH PublicKey representation for a Sequoia public Key
+fn key_to_ssh(key: &Key<PublicParts, UnspecifiedRole>) -> openssh_keys::PublicKey {
+    if let Key::V4(k) = key {
+        match (k.pk_algo(), k.mpis()) {
+            (PublicKeyAlgorithm::RSAEncryptSign, mpi) => {
+                if let PublicKey::RSA { e, n } = mpi {
+                    openssh_keys::PublicKey::from_rsa(e.value().to_vec(), n.value().to_vec())
+                } else {
+                    unimplemented!()
+                }
+            }
+            (PublicKeyAlgorithm::EdDSA, mpi) => {
+                if let PublicKey::EdDSA { curve, q } = mpi {
+                    assert_eq!(curve, &Curve::Ed25519); // FIXME
+
+                    openssh_keys::PublicKey {
+                        data: openssh_keys::Data::Ed25519 {
+                            key: q.value().to_vec()[1..].to_vec(), // FIXME: why?
+                        },
+                        comment: None,
+                        options: None,
+                    }
+                } else {
+                    unimplemented!()
+                }
+            }
+            _ => unimplemented!(),
+        }
+    } else {
+        unimplemented!()
     }
 }
 
@@ -93,50 +126,13 @@ impl Agent for Backend {
                     }
                 };
 
-                log::debug!("Offering Identity {:?}...", public);
+                // Get ssh public key representation(s)
+                let pk = key_to_ssh(&public);
 
-                let pubkey_blob = if let Key::V4(k) = public {
-                    match (k.pk_algo(), k.mpis()) {
-                        (PublicKeyAlgorithm::RSAEncryptSign, mpi) => {
-                            if let PublicKey::RSA { e, n } = mpi {
-                                let pub_key = openssh_keys::PublicKey::from_rsa(
-                                    e.to_vec().unwrap(),
-                                    n.to_vec().unwrap(),
-                                );
-                                pub_key.data()
-                            } else {
-                                unimplemented!()
-                            }
-                        }
-                        (PublicKeyAlgorithm::EdDSA, mpi) => {
-                            if let PublicKey::EdDSA { curve, q } = mpi {
-                                let key_type = sshkeys::KeyType::from_name("ssh-ed25519").unwrap();
-
-                                let kind =
-                                    sshkeys::PublicKeyKind::Ed25519(sshkeys::Ed25519PublicKey {
-                                        key: q.value().to_vec()[1..].to_vec(), // FIXME: why [1..]?
-                                        sk_application: None,
-                                    });
-
-                                let pk = sshkeys::PublicKey {
-                                    key_type,
-                                    comment: None,
-                                    kind,
-                                };
-
-                                pk.encode()
-                            } else {
-                                unimplemented!()
-                            }
-                        }
-                        _ => unimplemented!(),
-                    }
-                } else {
-                    unimplemented!()
-                };
+                log::debug!("Offering Identity {}...", pk);
 
                 let id = vec![Identity {
-                    pubkey_blob,
+                    pubkey_blob: pk.data(),
                     comment: "".to_string(),
                 }];
 
