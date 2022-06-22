@@ -1,5 +1,8 @@
 use clap::Parser;
 use service_binding::Binding;
+use std::borrow::BorrowMut;
+use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
 
 use sequoia_openpgp::crypto::mpi::{PublicKey, Signature};
 use sequoia_openpgp::crypto::Password;
@@ -15,21 +18,19 @@ use ssh_agent_lib::proto::{message::Identity, Message};
 
 struct Backend {
     // OpenPGP card keystore backend
-    ocard: Box<sequoia_keystore_ocard::Backend>,
+    ocard: Arc<Mutex<Box<sequoia_keystore_ocard::Backend>>>,
 
     // Identity (authentication key fingerprint)
-    ident: std::sync::Arc<std::sync::Mutex<std::cell::RefCell<Option<String>>>>,
+    ident: Arc<Mutex<RefCell<Option<String>>>>,
 
     // Public key
-    public: std::sync::Arc<
-        std::sync::Mutex<std::cell::RefCell<Option<Key<PublicParts, UnspecifiedRole>>>>,
-    >,
+    public: Arc<Mutex<RefCell<Option<Key<PublicParts, UnspecifiedRole>>>>>,
 }
 
 impl Backend {
     fn new(ocard: Box<sequoia_keystore_ocard::Backend>) -> Self {
         Self {
-            ocard,
+            ocard: Arc::new(Mutex::new(ocard)),
             public: Default::default(),
             ident: Default::default(),
         }
@@ -83,35 +84,43 @@ impl Agent for Backend {
                 let id = &key.id;
                 let pin = key.pin;
 
-                // FIXME: run backend scan to find new cards, if any?
-                // -> needs &mut access to backend
-                // (*self.ocard).scan().expect("backend scan");
+                let card = Arc::clone(&self.ocard);
+                let mut card = card.lock().unwrap();
+                let card = card.borrow_mut();
 
-                let mut key = (*self.ocard).find_key(id).expect("find key");
+                // Scan for new cards, if any
+                if let Err(e) = card.scan() {
+                    log::debug!("keystore scan failed: {}", e);
+                }
 
-                key.unlock(&Password::from(pin.as_bytes())).expect("unlock");
+                if let Ok(mut key) = card.find_key(id) {
+                    if key.unlock(&Password::from(pin.as_bytes())).is_ok() {
+                        let ident = Arc::clone(&self.ident);
+                        let ident = ident.lock().unwrap();
+                        ident.replace(Some(key.id()));
 
-                let ident = std::sync::Arc::clone(&self.ident);
-                let ident = ident.lock().unwrap();
+                        let pubkey = key.public_key().expect("public key");
+                        let public = Arc::clone(&self.public);
+                        let public = public.lock().unwrap();
+                        public.replace(Some(pubkey));
 
-                ident.replace(Some(key.id()));
+                        log::debug!("AddSmartcardKey <-");
 
-                let pubkey = key.public_key().expect("public key");
-
-                let public = std::sync::Arc::clone(&self.public);
-                let public = public.lock().unwrap();
-
-                public.replace(Some(pubkey));
-
-                log::debug!("AddSmartcardKey <-");
-
-                Ok(Message::Success)
+                        Ok(Message::Success)
+                    } else {
+                        log::debug!("Failed to unlock Key");
+                        Ok(Message::Failure)
+                    }
+                } else {
+                    log::debug!("Failed to find Key '{}'", id);
+                    Ok(Message::Failure)
+                }
             }
             Message::RequestIdentities => {
                 log::debug!("RequestIdentities");
 
                 let public = {
-                    let public = std::sync::Arc::clone(&self.public);
+                    let public = Arc::clone(&self.public);
                     let public = public.lock().unwrap();
                     let public = public.borrow();
                     if public.is_none() {
@@ -175,40 +184,56 @@ impl Agent for Backend {
                 };
 
                 // FIXME: keystore key should be looked up by ssh pubkey blob?
-                let ident = std::sync::Arc::clone(&self.ident);
+                let ident = Arc::clone(&self.ident);
                 let ident = ident.lock().unwrap();
                 let id = ident.borrow().clone();
-                let mut key = (*self.ocard).find_key(&id.unwrap()).expect("find key");
 
-                let signature = key.sign(hash_algo, &digest).expect("unlock");
+                let card = Arc::clone(&self.ocard);
+                let mut card = card.lock().unwrap();
+                let card = card.borrow_mut();
 
-                log::debug!("SIG: {:?}", signature);
+                if let Ok(mut key) = card.find_key(&id.clone().unwrap()) {
+                    if let Ok(signature) = key.sign(hash_algo, &digest) {
+                        log::debug!("SIG: {:?}", signature);
 
-                let (algorithm, data) = match signature {
-                    Signature::RSA { ref s } => match content_type {
-                        "application/vnd.pks.digest.sha256" => ("rsa-sha2-256", s.value().to_vec()),
-                        "application/vnd.pks.digest.sha512" => ("rsa-sha2-512", s.value().to_vec()),
-                        _ => unimplemented!(),
-                    },
-                    Signature::EdDSA { ref r, ref s } => {
-                        // FIXME
-                        let mut v = vec![];
-                        v.append(&mut r.value().to_vec());
-                        v.append(&mut s.value().to_vec());
+                        let (algorithm, data) = match signature {
+                            Signature::RSA { ref s } => match content_type {
+                                "application/vnd.pks.digest.sha256" => {
+                                    ("rsa-sha2-256", s.value().to_vec())
+                                }
+                                "application/vnd.pks.digest.sha512" => {
+                                    ("rsa-sha2-512", s.value().to_vec())
+                                }
+                                _ => unimplemented!(),
+                            },
+                            Signature::EdDSA { ref r, ref s } => {
+                                // FIXME
+                                let mut v = vec![];
+                                v.append(&mut r.value().to_vec());
+                                v.append(&mut s.value().to_vec());
 
-                        ("ssh-ed25519", v)
+                                ("ssh-ed25519", v)
+                            }
+                            _ => unimplemented!(),
+                        };
+
+                        let s = ssh_agent_lib::proto::signature::Signature {
+                            algorithm: algorithm.to_string(),
+                            blob: data,
+                        };
+
+                        log::trace!("ssh signature: {:?} [len {}]", s, s.blob.len());
+
+                        Ok(Message::SignResponse((s).to_blob().unwrap()))
+                    } else {
+                        log::debug!("Sign operation failed");
+                        // FIXME: we probably need to unlock this key again?
+                        Ok(Message::Failure)
                     }
-                    _ => unimplemented!(),
-                };
-
-                let s = ssh_agent_lib::proto::signature::Signature {
-                    algorithm: algorithm.to_string(),
-                    blob: data,
-                };
-
-                log::trace!("ssh signature: {:?} [len {}]", s, s.blob.len());
-
-                Ok(Message::SignResponse((s).to_blob().unwrap()))
+                } else {
+                    log::debug!("Failed to find Key '{}'", id.unwrap());
+                    Ok(Message::Failure)
+                }
             }
             _ => Ok(Message::Failure),
         }
