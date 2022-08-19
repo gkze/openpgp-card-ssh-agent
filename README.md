@@ -13,7 +13,7 @@ $ cargo install openpgp-card-ssh-agent
 ## Run
 
 ```
-$ simple-ssh-card-agent -H unix://$XDG_RUNTIME_DIR/openpgp-card-ssh-agent.sock
+$ openpgp-card-ssh-agent -H unix://$XDG_RUNTIME_DIR/ocsa.sock
 ```
 
 ## Use
@@ -33,13 +33,13 @@ again.
 Set the `SSH_AUTH_SOCK` environment variable:
 
 ```
-export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/openpgp-card-ssh-agent.sock
+$ export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/ocsa.sock
 ```
 
 After freshly starting the agent, you need to add your card(s) to the agent once:
 
 ```
-ssh-add -s FFFE:01234567
+$ ssh-add -s FFFE:01234567
 ```
 
 Enter the User PIN to the card (e.g. `123456`).
@@ -48,5 +48,5 @@ The agent will verify the User PIN. If the PIN is OK, it will remember both the 
 After adding a card, regular ssh usage backed by the authentication key slot on that card will work:
 
 ```
-ssh <hostname>
+$ ssh <hostname>
 ```
