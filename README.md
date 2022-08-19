@@ -1,62 +1,52 @@
-# SSH Agent using PKS
+# Simple (experimental) standalone SSH Agent for OpenPGP cards
 
-This is an SSH Agent that uses keys exposed via the [Private Key
-Store][PKS] protocol. Currently supported and used daily is a backend
-that allows using OpenPGP Card smartcards.
+This is a simple SSH Agent that uses keys on OpenPGP cards. The cards are accessed via PC/SC (e.g. via `pcscd`).
 
-[PKS]: https://gitlab.com/sequoia-pgp/pks
+The agent doesn't currently persist card identities or PINs.
 
-## Running
-
-First you need a PKS backend server, the recommended on is https://gitlab.com/sequoia-pgp/pks-openpgp-card
-
-For convenience first export the socket path that will be used by
-OpenSSH tools:
+## Install
 
 ```
-export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/ssh-agent-pks.sock
+$ cargo install openpgp-card-ssh-agent
 ```
 
-Then run this project binding to the socket while also specifying
-backend server:
+## Run
 
 ```
-cargo run -- -H unix://$SSH_AUTH_SOCK --endpoint $XDG_RUNTIME_DIR/pks-openpgp-card.sock
+$ simple-ssh-card-agent -H unix://$XDG_RUNTIME_DIR/openpgp-card-ssh-agent.sock
 ```
 
-List the available keys with:
+## Use
+
+List the available cards, e.g. with the `opgpcard` tool:
 
 ```
-$ curl --unix-socket $XDG_RUNTIME_DIR/pks-openpgp-card.sock localhost:3000/keys
-E7E2B84A36457BEA3F43692DE68BE3B312FA33FC # 0006:15422467 S
-F99A81E09CD8814B571DBF4AEB0BE68CD9CF08F1 # 0006:15422467 E
-3BA4FE02BF714A7789CB2E0051F23D6C0529CE0A # 0006:15422467 A
+$ opgpcard list
+Available OpenPGP cards:
+ FFFE:01234567
 ```
 
 If you don't see any keys it's possible that GnuPG is blocking the
 cards. The easiest way to solve this is to unplug and plug the card
 again.
 
-Next, you need to add your key to the agent:
+Set the `SSH_AUTH_SOCK` environment variable:
 
 ```
-ssh-add -s /3BA4FE02BF714A7789CB2E0051F23D6C0529CE0A
+export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/openpgp-card-ssh-agent.sock
 ```
 
-Enter the PIN to the card. The agent will verify that and if it's OK
-add the key (in reality it will get the capability URL and memorize
-that, not the PIN).
-
-and then the regular ssh will work:
+After freshly starting the agent, you need to add your card(s) to the agent once:
 
 ```
-ssh ...
+ssh-add -s FFFE:01234567
 ```
 
-## Production use
+Enter the User PIN to the card (e.g. `123456`).
+The agent will verify the User PIN. If the PIN is OK, it will remember both the card ident and the User PIN.
 
-It is recommended to use systemd socket activation to run the
-server. See `contrib` directory for details.
+After adding a card, regular ssh usage backed by the authentication key slot on that card will work:
 
-Packages:
-  - https://aur.archlinux.org/packages/ssh-agent-pks-git
+```
+ssh <hostname>
+```

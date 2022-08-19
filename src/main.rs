@@ -4,30 +4,34 @@ use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use openpgp_card::{Error, KeyType, OpenPgp};
+use openpgp_card_pcsc::PcscBackend;
+use openpgp_card_sequoia::card::Open;
+use openpgp_card_sequoia::util::key_slot;
+
 use sequoia_openpgp::crypto::mpi::{PublicKey, Signature};
-use sequoia_openpgp::crypto::Password;
+use sequoia_openpgp::crypto::Signer;
 use sequoia_openpgp::packet::key::{PublicParts, UnspecifiedRole};
 use sequoia_openpgp::packet::Key;
 use sequoia_openpgp::types::{Curve, HashAlgorithm, PublicKeyAlgorithm};
-
-use sequoia_keystore_backend::{Backend as KeystoreBackend, KeyHandle};
 
 use ssh_agent_lib::agent::Agent;
 use ssh_agent_lib::proto::Blob;
 use ssh_agent_lib::proto::{message::Identity, Message};
 
 struct Backend {
-    // OpenPGP card keystore backend
-    ocard: Arc<Mutex<Box<sequoia_keystore_ocard::Backend>>>,
+    // Map: card ident -> user pin
+    cards: Arc<Mutex<HashMap<String, String>>>,
 
-    // Map: ssh pubkey_blob -> keystore Key
-    keys: Arc<Mutex<HashMap<Vec<u8>, Box<dyn KeyHandle + Send + Sync>>>>,
+    // Map: ssh pubkey_blob -> card ident
+    keys: Arc<Mutex<HashMap<Vec<u8>, String>>>,
+
 }
 
 impl Backend {
-    fn new(ocard: Box<sequoia_keystore_ocard::Backend>) -> Self {
+    fn new() -> Self {
         Self {
-            ocard: Arc::new(Mutex::new(ocard)),
+            cards: Default::default(),
             keys: Default::default(),
         }
     }
@@ -67,7 +71,7 @@ fn key_to_ssh(key: &Key<PublicParts, UnspecifiedRole>) -> openssh_keys::PublicKe
 }
 
 impl Agent for Backend {
-    type Error = BackendError;
+    type Error = Error;
 
     fn handle(&self, request: Message) -> Result<Message, Self::Error> {
         log::trace!("handle: request {:X?}", request);
@@ -77,44 +81,38 @@ impl Agent for Backend {
                 // When running "ssh-add -s", this call gives us an `id` and a `pin`
 
                 log::debug!("AddSmartcardKey -> {}", key.id);
-                let id = &key.id;
+                let ident = key.id;
                 let pin = key.pin;
 
-                let card = Arc::clone(&self.ocard);
-                let mut card = card.lock().unwrap();
-                let card = card.borrow_mut();
+                // try if pin is ok, then remember ident and pin
+                let mut card = PcscBackend::open_by_ident(&ident, None)?;
+                let mut pgp = OpenPgp::new(&mut card);
 
-                // Scan for new cards, if any
-                if let Err(e) = card.scan() {
-                    log::debug!("keystore scan failed: {}", e);
-                }
+                let mut open = Open::new(pgp.transaction()?)?;
 
-                if let Ok(mut key) = card.find_key(id) {
-                    if key.unlock(&Password::from(pin.as_bytes())).is_ok() {
-                        if let Ok(pubkey) = key.public_key() {
-                            // Get ssh public key representation(s)
-                            let pk = key_to_ssh(&pubkey);
+                open.verify_user(pin.as_bytes())?;
 
-                            let pubkey_blob = pk.data();
+                if let Ok(Some(pubkey)) = key_slot(&mut open, KeyType::Authentication) {
+                    // Get ssh public key representation(s)
+                    let pk = key_to_ssh(&pubkey);
 
-                            let keys = Arc::clone(&self.keys);
-                            let mut keys = keys.lock().unwrap();
-                            let keys = keys.borrow_mut();
-                            keys.insert(pubkey_blob.clone(), key);
+                    let pubkey_blob = pk.data();
 
-                            log::debug!("AddSmartcardKey <-");
+                    let keys = Arc::clone(&self.keys);
+                    let mut keys = keys.lock().unwrap();
+                    let keys = keys.borrow_mut();
+                    keys.insert(pubkey_blob.clone(), ident.clone());
 
-                            Ok(Message::Success)
-                        } else {
-                            log::debug!("Failed to get public key material from store");
-                            Ok(Message::Failure)
-                        }
-                    } else {
-                        log::debug!("Failed to unlock Key");
-                        Ok(Message::Failure)
-                    }
+
+                    let cards = Arc::clone(&self.cards);
+                    let mut cards = cards.lock().unwrap();
+                    let cards = cards.borrow_mut();
+                    log::debug!("cards insert {},{}", ident, pin);
+                    cards.insert(ident, pin);
+
+                    Ok(Message::Success)
                 } else {
-                    log::debug!("Failed to find Key '{}'", id);
+                    log::debug!("Couldn't get auth key from card");
                     Ok(Message::Failure)
                 }
             }
@@ -122,6 +120,8 @@ impl Agent for Backend {
                 // This is triggered by "ssh-add -L" (and during login operations)
 
                 log::debug!("RequestIdentities");
+
+                // FIXME: filter out cards that are not currently plugged in?
 
                 let keys = Arc::clone(&self.keys);
                 let keys = keys.lock().unwrap();
@@ -146,15 +146,16 @@ impl Agent for Backend {
 
                 log::debug!("-> SignRequest");
 
-                // FIXME: we should sign with *this* key
-                // -> Store a mapping from pubkey blob to keystore key?
+                // get card ident for this pubkey blob
                 let pubkey_blob = request.pubkey_blob;
 
                 let keys = Arc::clone(&self.keys);
                 let mut keys = keys.lock().unwrap();
                 let keys = keys.borrow_mut();
 
-                if let Some(key) = keys.get_mut(&pubkey_blob) {
+                if let Some(ident) = keys.get_mut(&pubkey_blob) {
+                    log::debug!("ident {}",ident);
+
                     use sha2::{Digest, Sha256, Sha512};
 
                     const SSH_AGENT_RSA_SHA2_256: u32 = 2;
@@ -184,7 +185,25 @@ impl Agent for Backend {
                         _ => HashAlgorithm::SHA256, // FIXME?
                     };
 
-                    if let Ok(signature) = key.sign(hash_algo, &digest) {
+
+                    let cards = Arc::clone(&self.cards);
+                    let cards = cards.lock().unwrap();
+                    let cards = cards.borrow();
+                    let pin = cards.get(ident).expect("this shouldn't happen?");
+
+                    let mut card = PcscBackend::open_by_ident(&ident, None)?;
+                    let mut pgp = OpenPgp::new(&mut card);
+
+                    let mut open = Open::new(pgp.transaction()?)?;
+
+                    open.verify_user(pin.as_bytes())?;
+                    let mut user = open.user_card().unwrap();
+
+                    if let Ok(mut signer) = user.authenticator(&|| {
+                        println!("Touch confirmation needed for authentication")
+                    }) {
+                        let signature = signer.sign(hash_algo, &digest).expect("failed to sign");
+
                         log::debug!("SIG: {:?}", signature);
 
                         let (algorithm, data) = match signature {
@@ -255,9 +274,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let ocard = sequoia_keystore_ocard::Backend::init()?;
-
-    let agent = Backend::new(ocard);
+    let agent = Backend::new();
     match agent.listen(args.host.try_into()?) {
         Err(e) => log::debug!("fn=main listener=OK at=bind err={:?}", e),
         Ok(_) => log::debug!("Listening done!"),
