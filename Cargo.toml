@@ -1,24 +1,30 @@
 [package]
-name = "ssh-agent-pks"
+name = "openpgp-card-ssh-agent"
+description = "A simple ssh-agent implementation backed by OpenPGP card authentication keys"
 version = "0.1.0"
+authors = ["Wiktor Kwapisiewicz <wiktor@metacode.biz>", "Heiko Schaefer <heiko@schaefer.name>"]
+license = "GPL-3.0-or-later"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 base64 = "0.13.0"
+sha2 = "0.10"
 openssh-keys = "0.5.0"
 
 tokio = { version = "1", features = ["full"] }
-env_logger = "0.9"
-log = "0.4"
 tokio-uds = { version = "0.2.5" }
 tokio-reactor = { version = "0.1.1" }
-ssh-agent-lib = "0.2.5"
+env_logger = "0.9"
+log = "0.4"
 service-binding = "^0.3.0"
 clap = { version = "3.1", features = ["derive", "env"] }
-sha2 = "0.10"
 
-sequoia-openpgp = "1.9"
-sequoia-keystore-ocard = { git = "https://gitlab.com/hkos/sequoia-keystore.git", branch = "ocard" }
-sequoia-keystore-backend = { git = "https://gitlab.com/hkos/sequoia-keystore.git", branch = "ocard" }
+ssh-agent-lib = "0.2.5"
+
+sequoia-openpgp = "1.3"
+
+openpgp-card = "0.2"
+openpgp-card-pcsc = "0.2"
+openpgp-card-sequoia = "0.0.15"
