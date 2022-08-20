@@ -1,7 +1,6 @@
 use clap::Parser;
 use service_binding::Binding;
 use std::borrow::{Borrow, BorrowMut};
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use openpgp_card::{Error, KeyType, OpenPgp};
@@ -19,20 +18,23 @@ use ssh_agent_lib::agent::Agent;
 use ssh_agent_lib::proto::Blob;
 use ssh_agent_lib::proto::{message::Identity, Message};
 
+#[derive(Debug)]
+struct SshCard {
+    ident: String,
+    pin: String,
+    auth_pub: Key<PublicParts, UnspecifiedRole>,
+    ssh_pubkey_blob: Vec<u8>,
+}
+
 struct Backend {
-    // Map: card ident -> user pin
-    cards: Arc<Mutex<HashMap<String, String>>>,
-
-    // Map: ssh pubkey_blob -> card ident
-    keys: Arc<Mutex<HashMap<Vec<u8>, String>>>,
-
+    // List of Cards
+    cards: Arc<Mutex<Vec<SshCard>>>,
 }
 
 impl Backend {
     fn new() -> Self {
         Self {
             cards: Default::default(),
-            keys: Default::default(),
         }
     }
 }
@@ -96,19 +98,24 @@ impl Agent for Backend {
                     // Get ssh public key representation(s)
                     let pk = key_to_ssh(&pubkey);
 
-                    let pubkey_blob = pk.data();
-
-                    let keys = Arc::clone(&self.keys);
-                    let mut keys = keys.lock().unwrap();
-                    let keys = keys.borrow_mut();
-                    keys.insert(pubkey_blob.clone(), ident.clone());
-
+                    let sc = SshCard {
+                        ident,
+                        pin,
+                        ssh_pubkey_blob: pk.data(),
+                        auth_pub: pubkey,
+                    };
 
                     let cards = Arc::clone(&self.cards);
                     let mut cards = cards.lock().unwrap();
                     let cards = cards.borrow_mut();
-                    log::debug!("cards insert {},{}", ident, pin);
-                    cards.insert(ident, pin);
+
+                    log::debug!("cards insert {:?}", sc);
+
+                    // remove list entries that have the same card ident as this one
+                    cards.retain(|c| c.ident != sc.ident);
+
+                    // append new SshCard to our list
+                    cards.push(sc);
 
                     Ok(Message::Success)
                 } else {
@@ -123,14 +130,14 @@ impl Agent for Backend {
 
                 // FIXME: filter out cards that are not currently plugged in?
 
-                let keys = Arc::clone(&self.keys);
-                let keys = keys.lock().unwrap();
-                let keys = keys.borrow();
+                let cards = Arc::clone(&self.cards);
+                let cards = cards.lock().unwrap();
+                let cards = cards.borrow();
 
-                let ids: Vec<_> = keys
-                    .keys()
+                let ids: Vec<_> = cards
+                    .iter()
                     .map(|k| Identity {
-                        pubkey_blob: k.clone(),
+                        pubkey_blob: k.ssh_pubkey_blob.clone(),
                         comment: "".to_string(),
                     })
                     .collect();
@@ -149,71 +156,55 @@ impl Agent for Backend {
                 // get card ident for this pubkey blob
                 let pubkey_blob = request.pubkey_blob;
 
-                let keys = Arc::clone(&self.keys);
-                let mut keys = keys.lock().unwrap();
-                let keys = keys.borrow_mut();
+                let cards = Arc::clone(&self.cards);
+                let mut cards = cards.lock().unwrap();
+                let cards = cards.borrow_mut();
 
-                if let Some(ident) = keys.get_mut(&pubkey_blob) {
-                    log::debug!("ident {}",ident);
+                if let Some(sc) = cards.iter().find(|sc| sc.ssh_pubkey_blob == pubkey_blob) {
+                    log::debug!("using sc {:?}", sc);
 
                     use sha2::{Digest, Sha256, Sha512};
 
                     const SSH_AGENT_RSA_SHA2_256: u32 = 2;
                     const SSH_AGENT_RSA_SHA2_512: u32 = 4;
 
-                    let (content_type, digest) = if request.flags & SSH_AGENT_RSA_SHA2_256 != 0 {
+                    let (hash_algo, digest) = if request.flags & SSH_AGENT_RSA_SHA2_256 != 0 {
                         let mut hasher = Sha256::new();
                         hasher.update(&request.data);
                         let digest = hasher.finalize().to_vec();
 
-                        ("application/vnd.pks.digest.sha256", digest)
+                        (HashAlgorithm::SHA256, digest)
                     } else if request.flags & SSH_AGENT_RSA_SHA2_512 != 0 {
                         let mut hasher = Sha512::new();
                         hasher.update(&request.data);
                         let digest = hasher.finalize().to_vec();
 
-                        ("application/vnd.pks.digest.sha512", digest)
+                        (HashAlgorithm::SHA512, digest)
                     } else {
                         // raw message to be hashed and signed
                         // likely ed25519
-                        ("application/octet-stream", request.data)
+                        (HashAlgorithm::SHA256, request.data)
                     };
 
-                    let hash_algo = match content_type {
-                        "application/vnd.pks.digest.sha256" => HashAlgorithm::SHA256,
-                        "application/vnd.pks.digest.sha512" => HashAlgorithm::SHA512,
-                        _ => HashAlgorithm::SHA256, // FIXME?
-                    };
-
-
-                    let cards = Arc::clone(&self.cards);
-                    let cards = cards.lock().unwrap();
-                    let cards = cards.borrow();
-                    let pin = cards.get(ident).expect("this shouldn't happen?");
-
-                    let mut card = PcscBackend::open_by_ident(&ident, None)?;
+                    let mut card = PcscBackend::open_by_ident(&sc.ident, None)?;
                     let mut pgp = OpenPgp::new(&mut card);
 
                     let mut open = Open::new(pgp.transaction()?)?;
 
-                    open.verify_user(pin.as_bytes())?;
+                    open.verify_user(sc.pin.as_bytes())?;
                     let mut user = open.user_card().unwrap();
 
-                    if let Ok(mut signer) = user.authenticator(&|| {
+                    let mut signer = user.authenticator_from_public(sc.auth_pub.clone(), &|| {
                         println!("Touch confirmation needed for authentication")
-                    }) {
-                        let signature = signer.sign(hash_algo, &digest).expect("failed to sign");
+                    });
 
+                    if let Ok(signature) = signer.sign(hash_algo, &digest) {
                         log::debug!("SIG: {:?}", signature);
 
                         let (algorithm, data) = match signature {
-                            Signature::RSA { ref s } => match content_type {
-                                "application/vnd.pks.digest.sha256" => {
-                                    ("rsa-sha2-256", s.value().to_vec())
-                                }
-                                "application/vnd.pks.digest.sha512" => {
-                                    ("rsa-sha2-512", s.value().to_vec())
-                                }
+                            Signature::RSA { ref s } => match hash_algo {
+                                HashAlgorithm::SHA256 => ("rsa-sha2-256", s.value().to_vec()),
+                                HashAlgorithm::SHA512 => ("rsa-sha2-512", s.value().to_vec()),
                                 _ => unimplemented!(),
                             },
                             Signature::EdDSA { ref r, ref s } => {
@@ -236,12 +227,8 @@ impl Agent for Backend {
 
                         Ok(Message::SignResponse((s).to_blob().unwrap()))
                     } else {
-                        log::debug!("Sign operation failed");
-
-                        // FIXME: what should we do? -> unlock this key again?
-                        log::debug!("Removing this key from the agent");
-
-                        keys.remove(&pubkey_blob);
+                        log::debug!("Sign operation failed, removing this card from the agent");
+                        cards.retain(|c| c.ssh_pubkey_blob != pubkey_blob);
 
                         Ok(Message::Failure)
                     }
