@@ -26,9 +26,8 @@ Available OpenPGP cards:
  FFFE:01234567
 ```
 
-If you don't see any keys it's possible that GnuPG is blocking the
-cards. The easiest way to solve this is to unplug and plug the card
-again.
+If you don't see your card, it's possible that GnuPG is blocking it.
+The easiest way to solve this is to unplug and replug the card.
 
 Set the `SSH_AUTH_SOCK` environment variable:
 
