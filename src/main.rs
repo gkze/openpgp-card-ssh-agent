@@ -194,9 +194,19 @@ impl Agent for Backend {
                     open.verify_user(sc.pin.as_bytes())?;
                     let mut user = open.user_card().unwrap();
 
-                    let mut signer = user.authenticator_from_public(sc.auth_pub.clone(), &|| {
-                        println!("Touch confirmation needed for authentication")
-                    });
+                    let touch_prompt = move || {
+                        notify_rust::Notification::new()
+                            .summary("openpgp-card-ssh-agent")
+                            .body(&format!(
+                                "Touch confirmation needed for ssh auth on card {}",
+                                &sc.ident
+                            ))
+                            .show()
+                            .expect("failure in notify_rust");
+                    };
+
+                    let mut signer =
+                        user.authenticator_from_public(sc.auth_pub.clone(), &touch_prompt);
 
                     if let Ok(signature) = signer.sign(hash_algo, &digest) {
                         log::debug!("SIG: {:?}", signature);

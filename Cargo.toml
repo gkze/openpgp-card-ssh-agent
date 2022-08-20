@@ -22,6 +22,7 @@ env_logger = "0.9"
 log = "0.4"
 service-binding = "^0.3.0"
 clap = { version = "3.1", features = ["derive", "env"] }
+notify-rust = "4"
 
 ssh-agent-lib = "0.2.5"
 
