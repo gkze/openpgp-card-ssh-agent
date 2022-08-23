@@ -1,5 +1,0 @@
-[Socket]
-ListenStream=%t/ssh-agent-pks.sock
-
-[Install]
-WantedBy=sockets.target
