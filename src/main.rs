@@ -195,6 +195,7 @@ impl Agent for Backend {
                     let mut user = open.user_card().unwrap();
 
                     let touch_prompt = move || {
+                        #[cfg(feature = "notify")]
                         notify_rust::Notification::new()
                             .summary("openpgp-card-ssh-agent")
                             .body(&format!(
@@ -203,6 +204,11 @@ impl Agent for Backend {
                             ))
                             .show()
                             .expect("failure in notify_rust");
+                        #[cfg(not(feature = "notify"))]
+                        println!(
+                            "Touch confirmation needed for ssh auth on card {}",
+                            &sc.ident
+                        );
                     };
 
                     let mut signer =
