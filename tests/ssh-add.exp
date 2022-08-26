@@ -1,0 +1,6 @@
+set CARD [lindex $argv 0]
+
+spawn ssh-add -s "$CARD"
+expect "Enter passphrase for PKCS#11:"
+send -- "123456\r"
+expect eof

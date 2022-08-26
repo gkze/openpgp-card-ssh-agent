@@ -19,15 +19,30 @@ clippy:
 #  script:
 #    - cargo test --all --verbose
 
-e2e-tests:
-  image: docker:stable
-  # When using dind, it's wise to use the overlayfs driver for
-  # improved performance.
-  variables:
-    DOCKER_DRIVER: overlay2
-  services:
-    - docker:dind
+virtual-card-test:
+  image: registry.gitlab.com/openpgp-card/virtual-cards/smartpgp-tools
   before_script:
-    - docker info
+    - apt update -y -qq && apt install -y -qq openssh-server expect
+    - export PATH=$PATH:$HOME/.cargo/bin/
+    # Start pcscd
+    - /etc/init.d/pcscd start
+    # Start virtual OpenPGP card
+    - su - -c "sh /home/jcardsim/run-card.sh > /dev/null" jcardsim
+    # Start sshd
+    - mkdir -p /run/sshd && /usr/sbin/sshd
   script:
-    - docker build .
+    # Import PGP key into virtual OpenPGP card
+    - opgpcard admin -c AFAF:00001234 -P /dev/fd/3 import tests/rsa4k.pgp 3<<<12345678
+    # Run SSH Agent
+    # (build without the default "notify" feature: its dependencies require a newer Rust version than this image has.)
+    - cargo build --no-default-features
+    - cargo run --no-default-features -- -H unix://$XDG_RUNTIME_DIR/ocsa.sock &
+    - sleep 1
+    # ssh-add (add card to ssh agent and store the PIN)
+    - export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/ocsa.sock
+    - expect tests/ssh-add.exp AFAF:00001234
+    # Set up user account to ssh into
+    - useradd testuser && mkdir -p /home/testuser/.ssh
+    - opgpcard ssh | grep ^ssh > /home/testuser/.ssh/authorized_keys
+    # Test ssh login
+    - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
