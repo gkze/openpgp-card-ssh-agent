@@ -47,7 +47,8 @@ impl Backend {
 fn key_to_ssh(key: &Key<PublicParts, UnspecifiedRole>) -> openssh_keys::PublicKey {
     if let Key::V4(k) = key {
         match (k.pk_algo(), k.mpis()) {
-            (PublicKeyAlgorithm::RSAEncryptSign, mpi) => {
+            #[allow(deprecated)]
+            (PublicKeyAlgorithm::RSAEncryptSign | PublicKeyAlgorithm::RSASign, mpi) => {
                 if let PublicKey::RSA { e, n } = mpi {
                     openssh_keys::PublicKey::from_rsa(e.value().to_vec(), n.value().to_vec())
                 } else {
