@@ -1,20 +1,23 @@
 image: rust
 
-check-format:
+rustfmt:
   before_script:
     - rustup component add rustfmt
   script:
     - cargo fmt -- --check
 
-check-lint:
+clippy:
   before_script:
     - rustup component add clippy
+    - apt update -y -qq && apt install -y -qq --no-install-recommends clang pkg-config nettle-dev libpcsclite-dev
   script:
     - cargo clippy --all
 
-unit-tests:
-  script:
-    - cargo test --all --verbose
+#unit-tests:
+#  before_script:
+#    - apt update -y -qq && apt install -y -qq --no-install-recommends clang pkg-config nettle-dev libpcsclite-dev
+#  script:
+#    - cargo test --all --verbose
 
 e2e-tests:
   image: docker:stable
