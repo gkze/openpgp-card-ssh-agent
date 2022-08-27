@@ -55,3 +55,8 @@ After adding a card, regular ssh usage backed by the authentication key slot on 
 ```
 $ ssh <hostname>
 ```
+
+# Credit
+
+This project is based *very* heavily on work by Wiktor Kwapisiewicz <wiktor@metacode.biz>,
+at https://gitlab.com/sequoia-pgp/ssh-agent-pks
