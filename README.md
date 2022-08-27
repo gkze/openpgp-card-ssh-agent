@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2021-2022 Wiktor Kwapisiewicz <wiktor@metacode.biz>
+SPDX-FileCopyrightText: 2022 Heiko Schaefer <heiko@schaefer.name>
+SPDX-License-Identifier: CC-BY-SA-4.0
+-->
+
 # Simple (experimental) standalone SSH Agent for OpenPGP cards
 
 This is a simple SSH Agent that uses keys on OpenPGP cards. The cards are accessed via PC/SC (e.g. via `pcscd`).

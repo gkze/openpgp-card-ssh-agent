@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2021-2022 Wiktor Kwapisiewicz <wiktor@metacode.biz>
+// SPDX-FileCopyrightText: 2022 Heiko Schaefer <heiko@schaefer.name>
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 use clap::Parser;
 use service_binding::Binding;
 use std::borrow::{Borrow, BorrowMut};

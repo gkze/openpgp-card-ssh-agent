@@ -1,4 +1,17 @@
+# SPDX-FileCopyrightText: 2021-2022 Wiktor Kwapisiewicz <wiktor@metacode.biz>
+# SPDX-FileCopyrightText: 2022 Heiko Schaefer <heiko@schaefer.name>
+# SPDX-License-Identifier: CC0-1.0
+
 image: rust
+
+reuse:
+  image:
+    name: fsfe/reuse:latest
+    entrypoint: [ "" ]
+  script:
+    - reuse lint
+  dependencies: [ ]
+  cache: [ ]
 
 rustfmt:
   before_script:
