@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2021-2022 Wiktor Kwapisiewicz <wiktor@metacode.biz>
-// SPDX-FileCopyrightText: 2022 Heiko Schaefer <heiko@schaefer.name>
+// SPDX-FileCopyrightText: 2022-2023 Heiko Schaefer <heiko@schaefer.name>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use clap::Parser;
@@ -7,10 +7,10 @@ use service_binding::Binding;
 use std::borrow::{Borrow, BorrowMut};
 use std::sync::{Arc, Mutex};
 
-use openpgp_card::{Error, KeyType, OpenPgp};
+use openpgp_card::{Error, KeyType};
 use openpgp_card_pcsc::PcscBackend;
-use openpgp_card_sequoia::card::Open;
-use openpgp_card_sequoia::util::key_slot;
+use openpgp_card_sequoia::state::Open;
+use openpgp_card_sequoia::Card;
 
 use sequoia_openpgp::crypto::mpi::{PublicKey, Signature};
 use sequoia_openpgp::crypto::Signer;
@@ -92,14 +92,13 @@ impl Agent for Backend {
                 let pin = key.pin;
 
                 // try if pin is ok, then remember ident and pin
-                let mut card = PcscBackend::open_by_ident(&ident, None)?;
-                let mut pgp = OpenPgp::new(&mut card);
-
-                let mut open = Open::new(pgp.transaction()?)?;
+                let card = PcscBackend::open_by_ident(&ident, None)?;
+                let mut open: Card<Open> = card.into();
+                let mut open = open.transaction()?;
 
                 open.verify_user(pin.as_bytes())?;
 
-                if let Ok(Some(pubkey)) = key_slot(&mut open, KeyType::Authentication) {
+                if let Ok(Some(pubkey)) = open.public_key(KeyType::Authentication) {
                     // Get ssh public key representation(s)
                     let pk = key_to_ssh(&pubkey);
 
@@ -191,10 +190,9 @@ impl Agent for Backend {
                         (HashAlgorithm::SHA256, request.data)
                     };
 
-                    let mut card = PcscBackend::open_by_ident(&sc.ident, None)?;
-                    let mut pgp = OpenPgp::new(&mut card);
-
-                    let mut open = Open::new(pgp.transaction()?)?;
+                    let card = PcscBackend::open_by_ident(&sc.ident, None)?;
+                    let mut open: Card<Open> = card.into();
+                    let mut open = open.transaction()?;
 
                     open.verify_user(sc.pin.as_bytes())?;
                     let mut user = open.user_card().unwrap();
