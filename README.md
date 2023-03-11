@@ -1,12 +1,12 @@
 <!--
 SPDX-FileCopyrightText: 2021-2022 Wiktor Kwapisiewicz <wiktor@metacode.biz>
-SPDX-FileCopyrightText: 2022 Heiko Schaefer <heiko@schaefer.name>
+SPDX-FileCopyrightText: 2022-2023 Heiko Schaefer <heiko@schaefer.name>
 SPDX-License-Identifier: CC-BY-SA-4.0
 -->
 
 # Simple (experimental) standalone SSH Agent for OpenPGP cards
 
-This is a simple SSH Agent that uses keys on OpenPGP cards. The cards are accessed via PC/SC (e.g. via `pcscd`).
+This is a simple SSH agent that uses keys on OpenPGP cards. The cards are accessed via PC/SC (e.g. via `pcscd`).
 
 The agent doesn't currently persist card identities or PINs.
 
@@ -33,7 +33,10 @@ Available OpenPGP cards:
 ```
 
 If you don't see your card, it's possible that GnuPG is blocking it.
-The easiest way to solve this is to unplug and replug the card.
+The easiest way to work around this is to unplug and replug the card.
+
+(With recent versions of GnuPG, you might consider configuring scdaemon to access
+[PC/SC in shared mode](https://www.gnupg.org/documentation/manuals/gnupg/Scdaemon-Options.html#index-pcsc_002dshared)).
 
 Set the `SSH_AUTH_SOCK` environment variable:
 
@@ -55,6 +58,11 @@ After adding a card, regular ssh usage backed by the authentication key slot on 
 ```
 $ ssh <hostname>
 ```
+
+## Notifications for touch confirmation
+
+This SSH agent uses the [notify-rust](https://crates.io/crates/notify-rust) crate to alert the user if touch confirmation
+is required by the card.
 
 # Credit
 
