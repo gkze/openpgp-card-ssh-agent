@@ -18,7 +18,7 @@ pipeline:
       - apt update -y -qq && apt install -y -qq --no-install-recommends clang pkg-config nettle-dev libpcsclite-dev
       - cargo clippy --no-deps
 
-  virtual-card-test:
+  test-opcard-virtual:
     image: registry.gitlab.com/openpgp-card/virtual-cards/opcard-rs-tools
     commands:
       - apt update -y -qq && DEBIAN_FRONTEND=noninteractive apt install -y -qq dropbear expect
@@ -26,7 +26,7 @@ pipeline:
       - sh /start.sh
       # Start dropbear ssh server (openssh-server seems hard to run in a container)
       - /etc/init.d/dropbear start
-      # Import PGP key into virtual OpenPGP card
+      # Import 4k RSA PGP key into virtual OpenPGP card
       - /bin/bash -c 'opgpcard admin -c 0000:00000000 -P /dev/fd/3 import tests/rsa4k.pgp 3<<<12345678'
       # Run SSH Agent
       # (build without the default "notify" feature: its dependencies require a newer Rust version than this image has.)
@@ -39,5 +39,10 @@ pipeline:
       # Set up user account to ssh into
       - useradd testuser && mkdir -p /home/testuser/.ssh
       - opgpcard ssh | grep ^ssh > /home/testuser/.ssh/authorized_keys
-      # Test ssh login
+      # Test ssh login with RSA key
+      - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
+      # Now replace the key material on the card with a 25519 key, and try logging in with that
+      - /bin/bash -c 'opgpcard admin -c 0000:00000000 -P /dev/fd/3 import tests/25519.pgp 3<<<12345678'
+      - opgpcard ssh | grep ^ssh > /home/testuser/.ssh/authorized_keys
+      - expect tests/ssh-add.exp 0000:00000000
       - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
