@@ -9,7 +9,7 @@ version = "0.1.4"
 authors = ["Wiktor Kwapisiewicz <wiktor@metacode.biz>", "Heiko Schaefer <heiko@schaefer.name>"]
 license = "MIT OR Apache-2.0"
 edition = "2021"
-repository = "https://gitlab.com/openpgp-card/ssh-agent"
+repository = "https://codeberg.org/openpgp-card/ssh-agent/"
 documentation = "https://docs.rs/openpgp-card-ssh-agent"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
