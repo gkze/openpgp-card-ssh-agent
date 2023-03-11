@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: 2023 Heiko Schaefer <heiko@schaefer.name>
+# SPDX-License-Identifier: CC0-1.0
+
+pipeline:
+  reuse:
+    image: fsfe/reuse:latest
+
+  rustfmt:
+    image: rust
+    commands:
+      - rustup toolchain install nightly && rustup component add --toolchain nightly rustfmt
+      - cargo +nightly fmt -- --check
+
+  clippy:
+    image: rust
+    commands:
+      - rustup component add clippy
+      - apt update -y -qq && apt install -y -qq --no-install-recommends clang pkg-config nettle-dev libpcsclite-dev
+      - cargo clippy --no-deps
+
+  virtual-card-test:
+    image: registry.gitlab.com/openpgp-card/virtual-cards/opcard-rs-tools
+    commands:
+      - apt update -y -qq && DEBIAN_FRONTEND=noninteractive apt install -y -qq dropbear expect
+      # Start pcscd, virtual OpenPGP card
+      - sh /start.sh
+      # Start dropbear ssh server (openssh-server seems hard to run in a container)
+      - /etc/init.d/dropbear start
+      # Import PGP key into virtual OpenPGP card
+      - /bin/bash -c 'opgpcard admin -c 0000:00000000 -P /dev/fd/3 import tests/rsa4k.pgp 3<<<12345678'
+      # Run SSH Agent
+      # (build without the default "notify" feature: its dependencies require a newer Rust version than this image has.)
+      - cargo build --no-default-features --features sequoia-openpgp/default
+      - cargo run --no-default-features --features sequoia-openpgp/default -- -H unix://$XDG_RUNTIME_DIR/ocsa.sock &
+      - sleep 10
+      # ssh-add (add card to ssh agent and store the PIN)
+      - export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/ocsa.sock
+      - expect tests/ssh-add.exp 0000:00000000
+      # Set up user account to ssh into
+      - useradd testuser && mkdir -p /home/testuser/.ssh
+      - opgpcard ssh | grep ^ssh > /home/testuser/.ssh/authorized_keys
+      # Test ssh login
+      - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
