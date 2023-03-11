@@ -2,25 +2,22 @@
 // SPDX-FileCopyrightText: 2022-2023 Heiko Schaefer <heiko@schaefer.name>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use clap::Parser;
-use service_binding::Binding;
 use std::borrow::{Borrow, BorrowMut};
 use std::sync::{Arc, Mutex};
 
+use clap::Parser;
 use openpgp_card::{Error, KeyType};
 use openpgp_card_pcsc::PcscBackend;
 use openpgp_card_sequoia::state::Open;
 use openpgp_card_sequoia::Card;
-
 use sequoia_openpgp::crypto::mpi::{PublicKey, Signature};
 use sequoia_openpgp::crypto::Signer;
 use sequoia_openpgp::packet::key::{PublicParts, UnspecifiedRole};
 use sequoia_openpgp::packet::Key;
 use sequoia_openpgp::types::{Curve, HashAlgorithm, PublicKeyAlgorithm};
-
+use service_binding::Binding;
 use ssh_agent_lib::agent::Agent;
-use ssh_agent_lib::proto::Blob;
-use ssh_agent_lib::proto::{message::Identity, Message};
+use ssh_agent_lib::proto::{message::Identity, Blob, Message};
 
 #[derive(Debug)]
 struct SshCard {
