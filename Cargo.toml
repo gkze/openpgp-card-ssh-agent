@@ -30,15 +30,15 @@ notify-rust = { version = "4", optional = true }
 
 ssh-agent-lib = "0.2.5"
 
-sequoia-openpgp = "1.3"
+sequoia-openpgp = { version = "1.3", default-features = false }
 
 openpgp-card = "0.3"
 openpgp-card-pcsc = "0.3"
-openpgp-card-sequoia = "0.1"
+openpgp-card-sequoia = { version = "0.1", default-features = false }
 
 [profile.release]
 codegen-units = 1
 
 [features]
-default = ["notify"]
+default = ["notify", "sequoia-openpgp/default"]
 notify = ["notify-rust"]
