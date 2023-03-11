@@ -6,6 +6,9 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 # Simple (experimental) standalone SSH Agent for OpenPGP cards
 
+[![crates-io-badge](https://img.shields.io/crates/v/openpgp-card-ssh-agent.svg)](https://crates.io/crates/openpgp-card-ssh-agent)
+[![status-badge](https://ci.codeberg.org/api/badges/openpgp-card/ssh-agent/status.svg)](https://ci.codeberg.org/openpgp-card/ssh-agent)
+
 This is a simple SSH agent that uses keys on OpenPGP cards. The cards are accessed via PC/SC (e.g. via `pcscd`).
 
 The agent doesn't currently persist card identities or PINs.
