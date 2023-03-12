@@ -183,28 +183,67 @@ impl Agent for Backend {
                 if let Some(sc) = cards.iter().find(|sc| sc.ssh_pubkey_blob == pubkey_blob) {
                     log::debug!("Using card {:?}", sc);
 
-                    use sha2::{Digest, Sha256, Sha512};
+                    use sha2::Digest;
 
+                    // Signature scheme "rsa-sha2-256" or "rsa-sha2-512" [I-D.ietf-curdle-rsa-sha2]
                     const SSH_AGENT_RSA_SHA2_256: u32 = 2;
                     const SSH_AGENT_RSA_SHA2_512: u32 = 4;
 
-                    let (hash_algo, digest) = if request.flags & SSH_AGENT_RSA_SHA2_256 != 0 {
-                        let mut hasher = Sha256::new();
-                        hasher.update(&request.data);
-                        let digest = hasher.finalize().to_vec();
+                    let (hash_algo, sig_scheme, digest) =
+                        if request.flags & SSH_AGENT_RSA_SHA2_256 != 0 {
+                            let mut hasher = sha2::Sha256::new();
+                            hasher.update(&request.data);
+                            let digest = hasher.finalize().to_vec();
 
-                        (HashAlgorithm::SHA256, digest)
-                    } else if request.flags & SSH_AGENT_RSA_SHA2_512 != 0 {
-                        let mut hasher = Sha512::new();
-                        hasher.update(&request.data);
-                        let digest = hasher.finalize().to_vec();
+                            (HashAlgorithm::SHA256, "rsa-sha2-256", digest)
+                        } else if request.flags & SSH_AGENT_RSA_SHA2_512 != 0 {
+                            let mut hasher = sha2::Sha512::new();
+                            hasher.update(&request.data);
+                            let digest = hasher.finalize().to_vec();
 
-                        (HashAlgorithm::SHA512, digest)
-                    } else {
-                        // raw message to be hashed and signed
-                        // likely ed25519
-                        (HashAlgorithm::SHA256, request.data)
-                    };
+                            (HashAlgorithm::SHA512, "rsa-sha2-512", digest)
+                        } else {
+                            log::trace!("ECC data {:x?}, len {}", request.data, request.data.len());
+
+                            match sc.auth_pub.mpis() {
+                                PublicKey::ECDSA { curve, .. } => {
+                                    log::trace!("ECDSA {:?}", curve);
+
+                                    match curve {
+                                        Curve::NistP256 => {
+                                            let mut hasher = sha2::Sha256::new();
+                                            hasher.update(&request.data);
+                                            let digest = hasher.finalize().to_vec();
+
+                                            (HashAlgorithm::SHA256, "ecdsa-sha2-nistp256", digest)
+                                        }
+                                        Curve::NistP384 => {
+                                            let mut hasher = sha2::Sha384::new();
+                                            hasher.update(&request.data);
+                                            let digest = hasher.finalize().to_vec();
+
+                                            (HashAlgorithm::SHA384, "ecdsa-sha2-nistp384", digest)
+                                        }
+                                        Curve::NistP521 => {
+                                            let mut hasher = sha2::Sha512::new();
+                                            hasher.update(&request.data);
+                                            let digest = hasher.finalize().to_vec();
+
+                                            (HashAlgorithm::SHA512, "ecdsa-sha2-nistp521", digest)
+                                        }
+                                        _ => unimplemented!(),
+                                    }
+                                }
+                                PublicKey::EdDSA {
+                                    curve: Curve::Ed25519,
+                                    ..
+                                } => {
+                                    // raw message to be hashed and signed, ed25519
+                                    (HashAlgorithm::SHA256, "ssh-ed25519", request.data)
+                                }
+                                _ => unimplemented!(),
+                            }
+                        };
 
                     let card = PcscBackend::open_by_ident(&sc.ident, None)?;
                     let mut open: Card<Open> = card.into();
@@ -236,25 +275,49 @@ impl Agent for Backend {
                     if let Ok(signature) = signer.sign(hash_algo, &digest) {
                         log::debug!("sig from card: {:?}", signature);
 
-                        let (algorithm, data) = match signature {
-                            Signature::RSA { ref s } => match hash_algo {
-                                HashAlgorithm::SHA256 => ("rsa-sha2-256", s.value().to_vec()),
-                                HashAlgorithm::SHA512 => ("rsa-sha2-512", s.value().to_vec()),
-                                _ => unimplemented!(),
-                            },
+                        let data = match signature {
+                            Signature::RSA { ref s } => s.value().to_vec(),
                             Signature::EdDSA { ref r, ref s } => {
-                                // FIXME
-                                let mut v = vec![];
-                                v.append(&mut r.value().to_vec());
-                                v.append(&mut s.value().to_vec());
+                                log::trace!(
+                                    "EdDSA, len r {}, len s {}",
+                                    r.value().len(),
+                                    s.value().len()
+                                );
 
-                                ("ssh-ed25519", v)
+                                let mut v = vec![];
+                                v.append(&mut r.value_padded(32).unwrap().to_vec());
+                                v.append(&mut s.value_padded(32).unwrap().to_vec());
+
+                                v
+                            }
+                            Signature::ECDSA { ref r, ref s } => {
+                                let mut r = r.value().to_vec();
+                                let mut s = s.value().to_vec();
+
+                                // https://datatracker.ietf.org/doc/html/rfc4251#section-5
+                                //
+                                // "If the most significant bit would be set for a positive
+                                // number, the number MUST be preceded by a zero byte."
+                                if r[0] & 128 != 0 {
+                                    log::trace!("prepending 0 byte for r");
+                                    r.insert(0, 0);
+                                }
+                                if s[0] & 128 != 0 {
+                                    log::trace!("prepending 0 byte for s");
+                                    s.insert(0, 0);
+                                }
+
+                                let data = ssh_agent_lib::proto::EcDsaSignatureData { r, s };
+
+                                log::trace!("{:x?}", data);
+
+                                data.to_blob().unwrap() // FIXME: unwrap
                             }
                             _ => unimplemented!(),
                         };
 
                         let s = ssh_agent_lib::proto::signature::Signature {
-                            algorithm: algorithm.to_string(),
+                            algorithm: sig_scheme.to_string(),
                             blob: data,
                         };
 
