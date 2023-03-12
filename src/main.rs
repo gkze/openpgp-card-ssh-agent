@@ -5,11 +5,10 @@
 use std::borrow::{Borrow, BorrowMut};
 use std::sync::{Arc, Mutex};
 
-use anyhow::{anyhow, Result};
 use clap::Parser;
 use openpgp_card::algorithm::{Algo, Curve};
 use openpgp_card::crypto_data::{EccType, Hash, PublicKeyMaterial};
-use openpgp_card::{Error, KeyType, OpenPgp};
+use openpgp_card::{KeyType, OpenPgp};
 use openpgp_card_pcsc::PcscBackend;
 use service_binding::Binding;
 use ssh_agent_lib::agent::Agent;
@@ -36,7 +35,9 @@ impl Backend {
     }
 }
 
-fn get_ssh_pubkey(pkm: &PublicKeyMaterial) -> Result<openssh_keys::PublicKey> {
+fn get_ssh_pubkey(
+    pkm: &PublicKeyMaterial,
+) -> Result<openssh_keys::PublicKey, Box<dyn std::error::Error>> {
     match pkm {
         PublicKeyMaterial::R(rsa) => {
             let e = rsa.v().to_vec();
@@ -62,7 +63,13 @@ fn get_ssh_pubkey(pkm: &PublicKeyMaterial) -> Result<openssh_keys::PublicKey> {
                                 Curve::NistP256r1 => openssh_keys::Curve::Nistp256,
                                 Curve::NistP384r1 => openssh_keys::Curve::Nistp384,
                                 Curve::NistP521r1 => openssh_keys::Curve::Nistp521,
-                                _ => unimplemented!(),
+                                _ => {
+                                    return Err(anyhow::anyhow!(
+                                        "Unsupported ECDSA curve {:?}",
+                                        ecc_attrs.curve()
+                                    )
+                                    .into())
+                                }
                             };
 
                             let key = ecc.data().to_vec();
@@ -73,21 +80,23 @@ fn get_ssh_pubkey(pkm: &PublicKeyMaterial) -> Result<openssh_keys::PublicKey> {
                                 options: None,
                             })
                         } else {
-                            panic!()
+                            Err(anyhow::anyhow!("Unexpected ecc.algo {:?}", ecc.algo()).into())
                         }
                     }
-                    _ => Err(anyhow!("Unexpected EccType {:?}", ecc_attrs.ecc_type())),
+                    _ => {
+                        Err(anyhow::anyhow!("Unexpected EccType {:?}", ecc_attrs.ecc_type()).into())
+                    }
                 }
             } else {
-                Err(anyhow!("Unexpected Algo in EccPub {:?}", ecc))
+                Err(anyhow::anyhow!("Unexpected Algo in EccPub {:?}", ecc).into())
             }
         }
-        _ => Err(anyhow!("Unexpected PublicKeyMaterial type {:?}", pkm)),
+        _ => Err(anyhow::anyhow!("Unexpected PublicKeyMaterial type {:?}", pkm).into()),
     }
 }
 
 impl Agent for Backend {
-    type Error = Error;
+    type Error = openpgp_card::Error;
 
     fn handle(&self, request: Message) -> Result<Message, Self::Error> {
         log::trace!("handle: request {:X?}", request);
@@ -109,29 +118,34 @@ impl Agent for Backend {
 
                 if let Ok(pubkey) = open.public_key(KeyType::Authentication) {
                     // Get ssh public key representation(s)
-                    if let Ok(pk) = get_ssh_pubkey(&pubkey) {
-                        let sc = SshCard {
-                            ident,
-                            pin,
-                            auth_pub: pubkey,
-                            ssh_pubkey_blob: pk.data(),
-                        };
+                    match get_ssh_pubkey(&pubkey) {
+                        Ok(pk) => {
+                            let sc = SshCard {
+                                ident,
+                                pin,
+                                auth_pub: pubkey,
+                                ssh_pubkey_blob: pk.data(),
+                            };
 
-                        let cards = Arc::clone(&self.cards);
-                        let mut cards = cards.lock().unwrap();
-                        let cards = cards.borrow_mut();
+                            let cards = Arc::clone(&self.cards);
+                            let mut cards = cards.lock().unwrap();
+                            let cards = cards.borrow_mut();
 
-                        log::debug!("cards insert {:?}", sc);
+                            log::debug!("cards insert {:?}", sc);
 
-                        // remove list entries that have the same card ident as this one
-                        cards.retain(|c| c.ident != sc.ident);
+                            // remove list entries that have the same card ident as this one
+                            cards.retain(|c| c.ident != sc.ident);
 
-                        // append new SshCard to our list
-                        cards.push(sc);
+                            // append new SshCard to our list
+                            cards.push(sc);
 
-                        Ok(Message::Success)
-                    } else {
-                        Ok(Message::Failure)
+                            Ok(Message::Success)
+                        }
+                        Err(e) => {
+                            log::debug!("Failed to transform pkm with get_ssh_pubkey: {:?}", e);
+
+                            Ok(Message::Failure)
+                        }
                     }
                 } else {
                     log::debug!("Couldn't get auth key from card");
@@ -195,7 +209,8 @@ impl Agent for Backend {
                                 hasher.update(&request.data);
                                 ("rsa-sha2-256", hasher.finalize().to_vec())
                             } else {
-                                unimplemented!()
+                                log::error!("Unexpected RSA case");
+                                return Ok(Message::Failure);
                             }
                         }
                         PublicKeyMaterial::E(ecc) => {
@@ -230,7 +245,10 @@ impl Agent for Backend {
 
                                                 ("ecdsa-sha2-nistp521", digest)
                                             }
-                                            _ => unimplemented!(),
+                                            _ => {
+                                                log::error!("Unexpected ECDSA curve {:?}", curve);
+                                                return Ok(Message::Failure);
+                                            }
                                         }
                                     }
                                     EccType::EdDSA => {
@@ -240,13 +258,20 @@ impl Agent for Backend {
                                         // raw message to be hashed and signed, ed25519
                                         ("ssh-ed25519", request.data)
                                     }
-                                    _ => unimplemented!(),
+                                    e => {
+                                        log::error!("Unexpected EccType {:?}", e);
+                                        return Ok(Message::Failure);
+                                    }
                                 }
                             } else {
-                                unimplemented!()
+                                log::error!("Unexpected ECC case");
+                                return Ok(Message::Failure);
                             }
                         }
-                        _ => unimplemented!(),
+                        _ => {
+                            log::error!("Unexpected PublicKeyMaterial case");
+                            return Ok(Message::Failure);
+                        }
                     };
 
                     let card = PcscBackend::open_by_ident(&sc.ident, None)?;
@@ -329,7 +354,10 @@ impl Agent for Backend {
 
                                 data.to_blob().unwrap() // FIXME: unwrap
                             }
-                            _ => unimplemented!(),
+                            _ => {
+                                log::error!("Unexpected sig_scheme {sig_scheme}");
+                                return Ok(Message::Failure);
+                            }
                         };
 
                         let s = ssh_agent_lib::proto::signature::Signature {
