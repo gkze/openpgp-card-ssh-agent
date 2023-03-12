@@ -5,7 +5,7 @@
 [package]
 name = "openpgp-card-ssh-agent"
 description = "A simple ssh-agent backed by OpenPGP card authentication keys"
-version = "0.1.5"
+version = "0.1.6"
 authors = ["Wiktor Kwapisiewicz <wiktor@metacode.biz>", "Heiko Schaefer <heiko@schaefer.name>"]
 license = "MIT OR Apache-2.0"
 edition = "2021"
