@@ -5,16 +5,12 @@
 use std::borrow::{Borrow, BorrowMut};
 use std::sync::{Arc, Mutex};
 
+use anyhow::{anyhow, Result};
 use clap::Parser;
-use openpgp_card::{Error, KeyType};
+use openpgp_card::algorithm::{Algo, Curve};
+use openpgp_card::crypto_data::{EccType, Hash, PublicKeyMaterial};
+use openpgp_card::{Error, KeyType, OpenPgp};
 use openpgp_card_pcsc::PcscBackend;
-use openpgp_card_sequoia::state::Open;
-use openpgp_card_sequoia::Card;
-use sequoia_openpgp::crypto::mpi::{PublicKey, Signature};
-use sequoia_openpgp::crypto::Signer;
-use sequoia_openpgp::packet::key::{PublicParts, UnspecifiedRole};
-use sequoia_openpgp::packet::Key;
-use sequoia_openpgp::types::{Curve, HashAlgorithm, PublicKeyAlgorithm};
 use service_binding::Binding;
 use ssh_agent_lib::agent::Agent;
 use ssh_agent_lib::proto::{message::Identity, Blob, Message};
@@ -23,7 +19,7 @@ use ssh_agent_lib::proto::{message::Identity, Blob, Message};
 struct SshCard {
     ident: String,
     pin: String,
-    auth_pub: Key<PublicParts, UnspecifiedRole>,
+    auth_pub: PublicKeyMaterial,
     ssh_pubkey_blob: Vec<u8>,
 }
 
@@ -40,56 +36,53 @@ impl Backend {
     }
 }
 
-/// Get SSH PublicKey representation for a Sequoia public Key
-fn key_to_ssh(key: &Key<PublicParts, UnspecifiedRole>) -> openssh_keys::PublicKey {
-    if let Key::V4(k) = key {
-        match (k.pk_algo(), k.mpis()) {
-            #[allow(deprecated)]
-            (
-                PublicKeyAlgorithm::RSAEncryptSign | PublicKeyAlgorithm::RSASign,
-                PublicKey::RSA { e, n },
-            ) => openssh_keys::PublicKey::from_rsa(e.value().to_vec(), n.value().to_vec()),
-            (
-                PublicKeyAlgorithm::EdDSA,
-                PublicKey::EdDSA {
-                    curve: Curve::Ed25519,
-                    q,
-                },
-            ) => {
-                let key = q.value().to_vec()[1..].to_vec(); // FIXME: why?
+fn get_ssh_pubkey(pkm: &PublicKeyMaterial) -> Result<openssh_keys::PublicKey> {
+    match pkm {
+        PublicKeyMaterial::R(rsa) => {
+            let e = rsa.v().to_vec();
+            let n = rsa.n().to_vec();
 
-                openssh_keys::PublicKey {
-                    data: openssh_keys::Data::Ed25519 { key },
-                    comment: None,
-                    options: None,
+            Ok(openssh_keys::PublicKey::from_rsa(e, n))
+        }
+        PublicKeyMaterial::E(ecc) => {
+            if let Algo::Ecc(ecc_attrs) = ecc.algo() {
+                match ecc_attrs.ecc_type() {
+                    EccType::EdDSA => {
+                        let key = ecc.data().to_vec();
+
+                        Ok(openssh_keys::PublicKey {
+                            data: openssh_keys::Data::Ed25519 { key },
+                            comment: None,
+                            options: None,
+                        })
+                    }
+                    EccType::ECDSA => {
+                        if let Algo::Ecc(ecc_attrs) = ecc.algo() {
+                            let curve = match ecc_attrs.curve() {
+                                Curve::NistP256r1 => openssh_keys::Curve::Nistp256,
+                                Curve::NistP384r1 => openssh_keys::Curve::Nistp384,
+                                Curve::NistP521r1 => openssh_keys::Curve::Nistp521,
+                                _ => unimplemented!(),
+                            };
+
+                            let key = ecc.data().to_vec();
+
+                            Ok(openssh_keys::PublicKey {
+                                data: openssh_keys::Data::Ecdsa { curve, key },
+                                comment: None,
+                                options: None,
+                            })
+                        } else {
+                            panic!()
+                        }
+                    }
+                    _ => Err(anyhow!("Unexpected EccType {:?}", ecc_attrs.ecc_type())),
                 }
-            }
-            (PublicKeyAlgorithm::ECDSA, PublicKey::ECDSA { curve, q }) => {
-                let curve = match curve {
-                    Curve::NistP256 => openssh_keys::Curve::Nistp256,
-                    Curve::NistP384 => openssh_keys::Curve::Nistp384,
-                    Curve::NistP521 => openssh_keys::Curve::Nistp521,
-                    _ => unimplemented!(),
-                };
-
-                log::trace!("q value len {}", q.value().len());
-                log::trace!("q value {:x?}", q.value());
-
-                let key = q.value().to_vec();
-
-                openssh_keys::PublicKey {
-                    data: openssh_keys::Data::Ecdsa { curve, key },
-                    comment: None,
-                    options: None,
-                }
-            }
-            _ => {
-                log::debug!("{:?}", k.pk_algo());
-                unimplemented!()
+            } else {
+                Err(anyhow!("Unexpected Algo in EccPub {:?}", ecc))
             }
         }
-    } else {
-        unimplemented!()
+        _ => Err(anyhow!("Unexpected PublicKeyMaterial type {:?}", pkm)),
     }
 }
 
@@ -109,35 +102,37 @@ impl Agent for Backend {
 
                 // try if pin is ok, then remember ident and pin
                 let card = PcscBackend::open_by_ident(&ident, None)?;
-                let mut open: Card<Open> = card.into();
-                let mut open = open.transaction()?;
+                let mut opgp = OpenPgp::new(card);
+                let mut open = opgp.transaction()?;
 
-                open.verify_user(pin.as_bytes())?;
+                open.verify_pw1_user(pin.as_bytes())?;
 
-                if let Ok(Some(pubkey)) = open.public_key(KeyType::Authentication) {
+                if let Ok(pubkey) = open.public_key(KeyType::Authentication) {
                     // Get ssh public key representation(s)
-                    let pk = key_to_ssh(&pubkey);
+                    if let Ok(pk) = get_ssh_pubkey(&pubkey) {
+                        let sc = SshCard {
+                            ident,
+                            pin,
+                            auth_pub: pubkey,
+                            ssh_pubkey_blob: pk.data(),
+                        };
 
-                    let sc = SshCard {
-                        ident,
-                        pin,
-                        ssh_pubkey_blob: pk.data(),
-                        auth_pub: pubkey,
-                    };
+                        let cards = Arc::clone(&self.cards);
+                        let mut cards = cards.lock().unwrap();
+                        let cards = cards.borrow_mut();
 
-                    let cards = Arc::clone(&self.cards);
-                    let mut cards = cards.lock().unwrap();
-                    let cards = cards.borrow_mut();
+                        log::debug!("cards insert {:?}", sc);
 
-                    log::debug!("cards insert {:?}", sc);
+                        // remove list entries that have the same card ident as this one
+                        cards.retain(|c| c.ident != sc.ident);
 
-                    // remove list entries that have the same card ident as this one
-                    cards.retain(|c| c.ident != sc.ident);
+                        // append new SshCard to our list
+                        cards.push(sc);
 
-                    // append new SshCard to our list
-                    cards.push(sc);
-
-                    Ok(Message::Success)
+                        Ok(Message::Success)
+                    } else {
+                        Ok(Message::Failure)
+                    }
                 } else {
                     log::debug!("Couldn't get auth key from card");
                     Ok(Message::Failure)
@@ -189,79 +184,94 @@ impl Agent for Backend {
                     const SSH_AGENT_RSA_SHA2_256: u32 = 2;
                     const SSH_AGENT_RSA_SHA2_512: u32 = 4;
 
-                    let (hash_algo, sig_scheme, digest) =
-                        if request.flags & SSH_AGENT_RSA_SHA2_256 != 0 {
-                            let mut hasher = sha2::Sha256::new();
-                            hasher.update(&request.data);
-                            let digest = hasher.finalize().to_vec();
-
-                            (HashAlgorithm::SHA256, "rsa-sha2-256", digest)
-                        } else if request.flags & SSH_AGENT_RSA_SHA2_512 != 0 {
-                            let mut hasher = sha2::Sha512::new();
-                            hasher.update(&request.data);
-                            let digest = hasher.finalize().to_vec();
-
-                            (HashAlgorithm::SHA512, "rsa-sha2-512", digest)
-                        } else {
+                    let (sig_scheme, digest) = match &sc.auth_pub {
+                        PublicKeyMaterial::R(_) => {
+                            if request.flags & SSH_AGENT_RSA_SHA2_256 != 0 {
+                                let mut hasher = sha2::Sha256::new();
+                                hasher.update(&request.data);
+                                ("rsa-sha2-256", hasher.finalize().to_vec())
+                            } else if request.flags & SSH_AGENT_RSA_SHA2_512 != 0 {
+                                let mut hasher = sha2::Sha512::new();
+                                hasher.update(&request.data);
+                                ("rsa-sha2-256", hasher.finalize().to_vec())
+                            } else {
+                                unimplemented!()
+                            }
+                        }
+                        PublicKeyMaterial::E(ecc) => {
                             log::trace!("ECC data {:x?}, len {}", request.data, request.data.len());
 
-                            match sc.auth_pub.mpis() {
-                                PublicKey::ECDSA { curve, .. } => {
-                                    log::trace!("ECDSA {:?}", curve);
+                            if let Algo::Ecc(ea) = ecc.algo() {
+                                match ea.ecc_type() {
+                                    EccType::ECDSA => {
+                                        let curve = ea.curve();
 
-                                    match curve {
-                                        Curve::NistP256 => {
-                                            let mut hasher = sha2::Sha256::new();
-                                            hasher.update(&request.data);
-                                            let digest = hasher.finalize().to_vec();
+                                        log::trace!("ECDSA {:?}", curve);
 
-                                            (HashAlgorithm::SHA256, "ecdsa-sha2-nistp256", digest)
+                                        match curve {
+                                            Curve::NistP256r1 => {
+                                                let mut hasher = sha2::Sha256::new();
+                                                hasher.update(&request.data);
+                                                let digest = hasher.finalize().to_vec();
+
+                                                ("ecdsa-sha2-nistp256", digest)
+                                            }
+                                            Curve::NistP384r1 => {
+                                                let mut hasher = sha2::Sha384::new();
+                                                hasher.update(&request.data);
+                                                let digest = hasher.finalize().to_vec();
+
+                                                ("ecdsa-sha2-nistp384", digest)
+                                            }
+                                            Curve::NistP521r1 => {
+                                                let mut hasher = sha2::Sha512::new();
+                                                hasher.update(&request.data);
+                                                let digest = hasher.finalize().to_vec();
+
+                                                ("ecdsa-sha2-nistp521", digest)
+                                            }
+                                            _ => unimplemented!(),
                                         }
-                                        Curve::NistP384 => {
-                                            let mut hasher = sha2::Sha384::new();
-                                            hasher.update(&request.data);
-                                            let digest = hasher.finalize().to_vec();
-
-                                            (HashAlgorithm::SHA384, "ecdsa-sha2-nistp384", digest)
-                                        }
-                                        Curve::NistP521 => {
-                                            let mut hasher = sha2::Sha512::new();
-                                            hasher.update(&request.data);
-                                            let digest = hasher.finalize().to_vec();
-
-                                            (HashAlgorithm::SHA512, "ecdsa-sha2-nistp521", digest)
-                                        }
-                                        _ => unimplemented!(),
                                     }
+                                    EccType::EdDSA => {
+                                        let curve = ea.curve();
+                                        assert_eq!(curve, Curve::Ed25519);
+
+                                        // raw message to be hashed and signed, ed25519
+                                        ("ssh-ed25519", request.data)
+                                    }
+                                    _ => unimplemented!(),
                                 }
-                                PublicKey::EdDSA {
-                                    curve: Curve::Ed25519,
-                                    ..
-                                } => {
-                                    // raw message to be hashed and signed, ed25519
-                                    (HashAlgorithm::SHA256, "ssh-ed25519", request.data)
-                                }
-                                _ => unimplemented!(),
+                            } else {
+                                unimplemented!()
                             }
-                        };
+                        }
+                        _ => unimplemented!(),
+                    };
 
                     let card = PcscBackend::open_by_ident(&sc.ident, None)?;
-                    let mut open: Card<Open> = card.into();
-                    let mut open = open.transaction()?;
+                    let mut opgp = OpenPgp::new(card);
+                    let mut open = opgp.transaction()?;
 
-                    open.verify_user(sc.pin.as_bytes())?;
-                    let mut user = open.user_card().unwrap();
+                    open.verify_pw1_user(sc.pin.as_bytes())?;
 
+                    // Determine UIF setting for the auth slot
+                    let ard = open.application_related_data()?;
+
+                    // Notification function
                     let touch_prompt = move || {
                         #[cfg(feature = "notify")]
-                        notify_rust::Notification::new()
+                        if let Err(e) = notify_rust::Notification::new()
                             .summary("openpgp-card-ssh-agent")
                             .body(&format!(
                                 "Touch confirmation needed for ssh auth on card {}",
                                 &sc.ident
                             ))
                             .show()
-                            .expect("failure in notify_rust");
+                        {
+                            eprintln!("Failure in notify_rust: {:?}", e);
+                        }
+
                         #[cfg(not(feature = "notify"))]
                         println!(
                             "Touch confirmation needed for ssh auth on card {}",
@@ -269,30 +279,37 @@ impl Agent for Backend {
                         );
                     };
 
-                    let mut signer =
-                        user.authenticator_from_public(sc.auth_pub.clone(), &touch_prompt);
+                    if let Ok(Some(uif)) = ard.uif_pso_aut() {
+                        // Touch is required if:
+                        // - the card supports the feature
+                        // - and the policy requires touch
+                        if uif.touch_policy().touch_required() {
+                            touch_prompt();
+                        }
+                    };
 
-                    if let Ok(signature) = signer.sign(hash_algo, &digest) {
+                    // Perform signing operation of card and process signature
+                    if let Ok(signature) = match sig_scheme {
+                        "rsa-sha2-256" => {
+                            open.authenticate_for_hash(Hash::SHA256(digest.try_into().unwrap()))
+                        }
+                        "rsa-sha2-512" => {
+                            open.authenticate_for_hash(Hash::SHA512(digest.try_into().unwrap()))
+                        }
+                        _ => open.internal_authenticate(digest),
+                    } {
                         log::debug!("sig from card: {:?}", signature);
 
-                        let data = match signature {
-                            Signature::RSA { ref s } => s.value().to_vec(),
-                            Signature::EdDSA { ref r, ref s } => {
-                                log::trace!(
-                                    "EdDSA, len r {}, len s {}",
-                                    r.value().len(),
-                                    s.value().len()
-                                );
+                        let data = match sig_scheme {
+                            "rsa-sha2-256" | "rsa-sha2-512" => signature,
+                            "ssh-ed25519" => signature,
+                            "ecdsa-sha2-nistp256"
+                            | "ecdsa-sha2-nistp384"
+                            | "ecdsa-sha2-nistp521" => {
+                                let len = signature.len();
 
-                                let mut v = vec![];
-                                v.append(&mut r.value_padded(32).unwrap().to_vec());
-                                v.append(&mut s.value_padded(32).unwrap().to_vec());
-
-                                v
-                            }
-                            Signature::ECDSA { ref r, ref s } => {
-                                let mut r = r.value().to_vec();
-                                let mut s = s.value().to_vec();
+                                let mut r = signature[0..len / 2].to_vec();
+                                let mut s = signature[len / 2..].to_vec();
 
                                 // https://datatracker.ietf.org/doc/html/rfc4251#section-5
                                 //
@@ -308,7 +325,6 @@ impl Agent for Backend {
                                 }
 
                                 let data = ssh_agent_lib::proto::EcDsaSignatureData { r, s };
-
                                 log::trace!("{:x?}", data);
 
                                 data.to_blob().unwrap() // FIXME: unwrap

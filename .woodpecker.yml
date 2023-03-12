@@ -15,7 +15,7 @@ pipeline:
     image: rust:1.67.1
     commands:
       - rustup component add clippy
-      - apt update -y -qq && apt install -y -qq --no-install-recommends clang pkg-config nettle-dev libpcsclite-dev
+      - apt update -y -qq && apt install -y -qq --no-install-recommends clang pkg-config libpcsclite-dev
       - cargo clippy --no-deps
 
   test-opcard-virtual:
@@ -30,8 +30,8 @@ pipeline:
       - useradd testuser && mkdir -p /home/testuser/.ssh
       # Run/configure SSH Agent
       # (build without the default "notify" feature: its dependencies require a newer Rust version than this image has.)
-      - cargo build --no-default-features --features sequoia-openpgp/default
-      - cargo run --no-default-features --features sequoia-openpgp/default -- -H unix://$XDG_RUNTIME_DIR/ocsa.sock &
+      - cargo build --no-default-features
+      - cargo run --no-default-features -- -H unix://$XDG_RUNTIME_DIR/ocsa.sock &
       - export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/ocsa.sock
       - sleep 10
 
@@ -72,8 +72,8 @@ pipeline:
       - useradd testuser && mkdir -p /home/testuser/.ssh
       # Run/configure SSH Agent
       # (build without the default "notify" feature: its dependencies require a newer Rust version than this image has.)
-      - cargo build --no-default-features --features sequoia-openpgp/default
-      - cargo run --no-default-features --features sequoia-openpgp/default -- -H unix://$XDG_RUNTIME_DIR/ocsa.sock &
+      - cargo build --no-default-features
+      - cargo run --no-default-features -- -H unix://$XDG_RUNTIME_DIR/ocsa.sock &
       - export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/ocsa.sock
       - sleep 10
 
