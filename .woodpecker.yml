@@ -26,24 +26,36 @@ pipeline:
       - sh /start.sh
       # Start dropbear ssh server (openssh-server seems hard to run in a container)
       - /etc/init.d/dropbear start
-      # Import 4k RSA PGP key into virtual OpenPGP card
-      - /bin/bash -c 'opgpcard admin -c 0000:00000000 -P /dev/fd/3 import tests/rsa4k.pgp 3<<<12345678'
-      # Run SSH Agent
+      # Set up user account to ssh into
+      - useradd testuser && mkdir -p /home/testuser/.ssh
+      # Run/configure SSH Agent
       # (build without the default "notify" feature: its dependencies require a newer Rust version than this image has.)
       - cargo build --no-default-features --features sequoia-openpgp/default
       - cargo run --no-default-features --features sequoia-openpgp/default -- -H unix://$XDG_RUNTIME_DIR/ocsa.sock &
-      - sleep 10
-      # ssh-add (add card to ssh agent and store the PIN)
       - export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/ocsa.sock
+      - sleep 10
+
+      # Test ssh login with rsa2048 key
+      - /bin/bash -c 'opgpcard admin --card 0000:00000000 -P /dev/fd/3 generate -p /dev/fd/4 --output /dev/null rsa2048 3<<<12345678 4<<<123456'
+      - opgpcard ssh | grep ^ssh > /home/testuser/.ssh/authorized_keys
       - expect tests/ssh-add.exp 0000:00000000
-      # Set up user account to ssh into
-      - useradd testuser && mkdir -p /home/testuser/.ssh
-      - opgpcard ssh | grep ^ssh > /home/testuser/.ssh/authorized_keys
-      # Test ssh login with RSA key
       - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
-      # Now replace the key material on the card with a 25519 key, and try logging in with that
-      - /bin/bash -c 'opgpcard admin -c 0000:00000000 -P /dev/fd/3 import tests/25519.pgp 3<<<12345678'
+
+      # Test ssh login with rsa4096 key
+      - /bin/bash -c 'opgpcard admin --card 0000:00000000 -P /dev/fd/3 generate -p /dev/fd/4 --output /dev/null rsa4096 3<<<12345678 4<<<123456'
       - opgpcard ssh | grep ^ssh > /home/testuser/.ssh/authorized_keys
+      - expect tests/ssh-add.exp 0000:00000000 # add card to ssh agent and store the PIN
+      - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
+
+      # Test ssh login with curve 25519 key
+      - /bin/bash -c 'opgpcard admin --card 0000:00000000 -P /dev/fd/3 generate -p /dev/fd/4 --output /dev/null cv25519 3<<<12345678 4<<<123456'
+      - opgpcard ssh | grep ^ssh > /home/testuser/.ssh/authorized_keys
+      - expect tests/ssh-add.exp 0000:00000000
+      - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
+
+      # Test ssh login with nistp256 key
+      - /bin/bash -c 'opgpcard admin --card 0000:00000000 -P /dev/fd/3 generate -p /dev/fd/4 --output /dev/null nistp256 3<<<12345678 4<<<123456'
+      - opgpcard ssh | grep ^ecdsa > /home/testuser/.ssh/authorized_keys
       - expect tests/ssh-add.exp 0000:00000000
       - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
 
