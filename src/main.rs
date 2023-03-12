@@ -45,29 +45,48 @@ fn key_to_ssh(key: &Key<PublicParts, UnspecifiedRole>) -> openssh_keys::PublicKe
     if let Key::V4(k) = key {
         match (k.pk_algo(), k.mpis()) {
             #[allow(deprecated)]
-            (PublicKeyAlgorithm::RSAEncryptSign | PublicKeyAlgorithm::RSASign, mpi) => {
-                if let PublicKey::RSA { e, n } = mpi {
-                    openssh_keys::PublicKey::from_rsa(e.value().to_vec(), n.value().to_vec())
-                } else {
-                    unimplemented!()
-                }
-            }
-            (PublicKeyAlgorithm::EdDSA, mpi) => {
-                if let PublicKey::EdDSA { curve, q } = mpi {
-                    assert_eq!(curve, &Curve::Ed25519); // FIXME
+            (
+                PublicKeyAlgorithm::RSAEncryptSign | PublicKeyAlgorithm::RSASign,
+                PublicKey::RSA { e, n },
+            ) => openssh_keys::PublicKey::from_rsa(e.value().to_vec(), n.value().to_vec()),
+            (
+                PublicKeyAlgorithm::EdDSA,
+                PublicKey::EdDSA {
+                    curve: Curve::Ed25519,
+                    q,
+                },
+            ) => {
+                let key = q.value().to_vec()[1..].to_vec(); // FIXME: why?
 
-                    openssh_keys::PublicKey {
-                        data: openssh_keys::Data::Ed25519 {
-                            key: q.value().to_vec()[1..].to_vec(), // FIXME: why?
-                        },
-                        comment: None,
-                        options: None,
-                    }
-                } else {
-                    unimplemented!()
+                openssh_keys::PublicKey {
+                    data: openssh_keys::Data::Ed25519 { key },
+                    comment: None,
+                    options: None,
                 }
             }
-            _ => unimplemented!(),
+            (PublicKeyAlgorithm::ECDSA, PublicKey::ECDSA { curve, q }) => {
+                let curve = match curve {
+                    Curve::NistP256 => openssh_keys::Curve::Nistp256,
+                    Curve::NistP384 => openssh_keys::Curve::Nistp384,
+                    Curve::NistP521 => openssh_keys::Curve::Nistp521,
+                    _ => unimplemented!(),
+                };
+
+                log::trace!("q value len {}", q.value().len());
+                log::trace!("q value {:x?}", q.value());
+
+                let key = q.value().to_vec();
+
+                openssh_keys::PublicKey {
+                    data: openssh_keys::Data::Ecdsa { curve, key },
+                    comment: None,
+                    options: None,
+                }
+            }
+            _ => {
+                log::debug!("{:?}", k.pk_algo());
+                unimplemented!()
+            }
         }
     } else {
         unimplemented!()
