@@ -46,3 +46,51 @@ pipeline:
       - opgpcard ssh | grep ^ssh > /home/testuser/.ssh/authorized_keys
       - expect tests/ssh-add.exp 0000:00000000
       - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
+
+  test-smartpgp-virtual:
+    image: registry.gitlab.com/openpgp-card/virtual-cards/smartpgp-tools
+    commands:
+      - . "$HOME/.cargo/env"
+      - apt update -y -qq && DEBIAN_FRONTEND=noninteractive apt install -y -qq dropbear expect
+      # Start pcscd, virtual OpenPGP card
+      - sh /start.sh
+      # Start dropbear ssh server (openssh-server seems hard to run in a container)
+      - /etc/init.d/dropbear start
+      # Set up user account to ssh into
+      - useradd testuser && mkdir -p /home/testuser/.ssh
+      # Run/configure SSH Agent
+      # (build without the default "notify" feature: its dependencies require a newer Rust version than this image has.)
+      - cargo build --no-default-features --features sequoia-openpgp/default
+      - cargo run --no-default-features --features sequoia-openpgp/default -- -H unix://$XDG_RUNTIME_DIR/ocsa.sock &
+      - export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/ocsa.sock
+      - sleep 10
+
+      # Test ssh login with nistp256 key
+      - /bin/bash -c 'opgpcard admin --card AFAF:00001234 -P /dev/fd/3 generate -p /dev/fd/4 --output /dev/null nistp256 3<<<12345678 4<<<123456'
+      - opgpcard ssh | grep ^ecdsa > /home/testuser/.ssh/authorized_keys
+      - expect tests/ssh-add.exp AFAF:00001234
+      - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
+
+      # Test ssh login with nistp384 key
+      - /bin/bash -c 'opgpcard admin --card AFAF:00001234 -P /dev/fd/3 generate -p /dev/fd/4 --output /dev/null nistp384 3<<<12345678 4<<<123456'
+      - opgpcard ssh | grep ^ecdsa > /home/testuser/.ssh/authorized_keys
+      - expect tests/ssh-add.exp AFAF:00001234
+      - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
+
+      # Test ssh login with nistp521 key
+      - /bin/bash -c 'opgpcard admin --card AFAF:00001234 -P /dev/fd/3 generate -p /dev/fd/4 --output /dev/null nistp521 3<<<12345678 4<<<123456'
+      - opgpcard ssh | grep ^ecdsa > /home/testuser/.ssh/authorized_keys
+      - expect tests/ssh-add.exp AFAF:00001234
+      - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
+
+      # Test ssh login with rsa2048 key
+      - /bin/bash -c 'opgpcard admin --card AFAF:00001234 -P /dev/fd/3 generate -p /dev/fd/4 --output /dev/null rsa2048 3<<<12345678 4<<<123456'
+      - opgpcard ssh | grep ^ssh > /home/testuser/.ssh/authorized_keys
+      - expect tests/ssh-add.exp AFAF:00001234
+      - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
+
+      # Test ssh login with rsa4096 key
+      - /bin/bash -c 'opgpcard admin --card AFAF:00001234 -P /dev/fd/3 generate -p /dev/fd/4 --output /dev/null rsa4096 3<<<12345678 4<<<123456'
+      - opgpcard ssh | grep ^ssh > /home/testuser/.ssh/authorized_keys
+      - expect tests/ssh-add.exp AFAF:00001234
+      - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
