@@ -11,6 +11,7 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 This is a simple SSH agent that uses keys on OpenPGP cards. The cards are accessed via PC/SC (e.g. via `pcscd`).
 
+The agent supports RSA 2048/4096, NIST P-256/384/521 and Curve 25519 keys.
 The agent doesn't currently persist card identities or PINs.
 
 ## Install
