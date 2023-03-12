@@ -143,7 +143,7 @@ impl Agent for Backend {
                     })
                     .collect();
 
-                log::debug!("Offering Identities {:#?}...", ids);
+                log::debug!("Offering Identities {:x?}", ids);
 
                 Ok(Message::IdentitiesAnswer(ids))
             }
@@ -152,7 +152,7 @@ impl Agent for Backend {
                 // This is triggered during ssh logins, if the remote server
                 // knows any of the identities we report in RequestIdentities.
 
-                log::debug!("-> SignRequest");
+                log::debug!("-> SignRequest {:x?}", request);
 
                 // get card ident for this pubkey blob
                 let pubkey_blob = request.pubkey_blob;
@@ -162,7 +162,7 @@ impl Agent for Backend {
                 let cards = cards.borrow_mut();
 
                 if let Some(sc) = cards.iter().find(|sc| sc.ssh_pubkey_blob == pubkey_blob) {
-                    log::debug!("using sc {:?}", sc);
+                    log::debug!("Using card {:?}", sc);
 
                     use sha2::{Digest, Sha256, Sha512};
 
@@ -215,7 +215,7 @@ impl Agent for Backend {
                         user.authenticator_from_public(sc.auth_pub.clone(), &touch_prompt);
 
                     if let Ok(signature) = signer.sign(hash_algo, &digest) {
-                        log::debug!("SIG: {:?}", signature);
+                        log::debug!("sig from card: {:?}", signature);
 
                         let (algorithm, data) = match signature {
                             Signature::RSA { ref s } => match hash_algo {
