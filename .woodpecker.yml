@@ -20,6 +20,7 @@ pipeline:
 
   test-opcard-virtual:
     image: registry.gitlab.com/openpgp-card/virtual-cards/opcard-rs-tools
+    pull: true
     commands:
       - apt update -y -qq && DEBIAN_FRONTEND=noninteractive apt install -y -qq dropbear expect
       # Start pcscd, virtual OpenPGP card
@@ -61,6 +62,7 @@ pipeline:
 
   test-smartpgp-virtual:
     image: registry.gitlab.com/openpgp-card/virtual-cards/smartpgp-tools
+    pull: true
     commands:
       - . "$HOME/.cargo/env"
       - apt update -y -qq && DEBIAN_FRONTEND=noninteractive apt install -y -qq dropbear expect
