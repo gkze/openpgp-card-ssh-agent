@@ -17,7 +17,7 @@ The agent doesn't currently persist card identities or PINs.
 ## Install
 
 ```
-$ cargo install openpgp-card-ssh-agent
+$ cargo install --locked openpgp-card-ssh-agent
 ```
 
 ## Run
