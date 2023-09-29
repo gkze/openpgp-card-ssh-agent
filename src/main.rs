@@ -5,11 +5,11 @@
 use std::borrow::{Borrow, BorrowMut};
 use std::sync::{Arc, Mutex};
 
+use card_backend_pcsc::PcscBackend;
 use clap::Parser;
-use openpgp_card::algorithm::{Algo, Curve};
+use openpgp_card::algorithm::{AlgorithmAttributes, Curve};
 use openpgp_card::crypto_data::{EccType, Hash, PublicKeyMaterial};
-use openpgp_card::{KeyType, OpenPgp};
-use openpgp_card_pcsc::PcscBackend;
+use openpgp_card::{Card, KeyType};
 use service_binding::Binding;
 use ssh_agent_lib::agent::Agent;
 use ssh_agent_lib::proto::{message::Identity, Blob, Message};
@@ -35,6 +35,28 @@ impl Backend {
     }
 }
 
+fn card_by_ident(ident: &str) -> Result<Card, openpgp_card::Error> {
+    let backends = PcscBackend::cards(None)?;
+
+    for b in backends.filter_map(|c| c.ok()) {
+        let mut card = Card::new(b)?;
+
+        let aid = {
+            let mut tx = card.transaction()?;
+            tx.application_related_data()?
+        };
+
+        if aid.application_id()?.ident() == ident.to_ascii_uppercase() {
+            return Ok(card);
+        }
+    }
+
+    Err(openpgp_card::Error::NotFound(format!(
+        "Couldn't open card '{}'",
+        ident
+    )))
+}
+
 fn get_ssh_pubkey(
     pkm: &PublicKeyMaterial,
 ) -> Result<openssh_keys::PublicKey, Box<dyn std::error::Error>> {
@@ -46,7 +68,7 @@ fn get_ssh_pubkey(
             Ok(openssh_keys::PublicKey::from_rsa(e, n))
         }
         PublicKeyMaterial::E(ecc) => {
-            if let Algo::Ecc(ecc_attrs) = ecc.algo() {
+            if let AlgorithmAttributes::Ecc(ecc_attrs) = ecc.algo() {
                 match ecc_attrs.ecc_type() {
                     EccType::EdDSA => {
                         let key = ecc.data().to_vec();
@@ -58,7 +80,7 @@ fn get_ssh_pubkey(
                         })
                     }
                     EccType::ECDSA => {
-                        if let Algo::Ecc(ecc_attrs) = ecc.algo() {
+                        if let AlgorithmAttributes::Ecc(ecc_attrs) = ecc.algo() {
                             let curve = match ecc_attrs.curve() {
                                 Curve::NistP256r1 => openssh_keys::Curve::Nistp256,
                                 Curve::NistP384r1 => openssh_keys::Curve::Nistp384,
@@ -110,8 +132,7 @@ impl Agent for Backend {
                 let pin = key.pin;
 
                 // try if pin is ok, then remember ident and pin
-                let card = PcscBackend::open_by_ident(&ident, None)?;
-                let mut opgp = OpenPgp::new(card);
+                let mut opgp = card_by_ident(&ident)?;
                 let mut open = opgp.transaction()?;
 
                 open.verify_pw1_user(pin.as_bytes())?;
@@ -216,7 +237,7 @@ impl Agent for Backend {
                         PublicKeyMaterial::E(ecc) => {
                             log::trace!("ECC data {:x?}, len {}", request.data, request.data.len());
 
-                            if let Algo::Ecc(ea) = ecc.algo() {
+                            if let AlgorithmAttributes::Ecc(ea) = ecc.algo() {
                                 match ea.ecc_type() {
                                     EccType::ECDSA => {
                                         let curve = ea.curve();
@@ -253,7 +274,7 @@ impl Agent for Backend {
                                     }
                                     EccType::EdDSA => {
                                         let curve = ea.curve();
-                                        assert_eq!(curve, Curve::Ed25519);
+                                        assert_eq!(curve, &Curve::Ed25519);
 
                                         // raw message to be hashed and signed, ed25519
                                         ("ssh-ed25519", request.data)
@@ -274,8 +295,7 @@ impl Agent for Backend {
                         }
                     };
 
-                    let card = PcscBackend::open_by_ident(&sc.ident, None)?;
-                    let mut opgp = OpenPgp::new(card);
+                    let mut opgp = card_by_ident(&sc.ident)?;
                     let mut open = opgp.transaction()?;
 
                     open.verify_pw1_user(sc.pin.as_bytes())?;

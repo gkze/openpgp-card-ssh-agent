@@ -17,18 +17,19 @@ documentation = "https://docs.rs/openpgp-card-ssh-agent"
 [dependencies]
 anyhow = "1"
 sha2 = "0.10"
-openssh-keys = "0.5"
+openssh-keys = "0.6"
 
 env_logger = "0.10"
 log = "0.4"
-service-binding = "^0.3.0"
-clap = { version = "3.1", features = ["derive", "env"] }
-notify-rust = { version = "4", optional = true }
+clap = { version = "3", features = ["derive", "env"] }
 
 ssh-agent-lib = "0.2.5"
+service-binding = "^0.3.0"
 
-openpgp-card = "0.3"
-openpgp-card-pcsc = "0.3"
+openpgp-card = "0.4"
+card-backend-pcsc = "0.5"
+
+notify-rust = { version = "4", optional = true }
 
 [profile.release]
 codegen-units = 1
