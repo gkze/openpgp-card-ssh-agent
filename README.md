@@ -65,8 +65,9 @@ $ ssh <hostname>
 
 ## Notifications for touch confirmation
 
-This SSH agent uses the [notify-rust](https://crates.io/crates/notify-rust) crate to alert the user if touch confirmation
-is required by the card.
+This SSH agent uses the [notify-rust](https://crates.io/crates/notify-rust) crate to alert the user if the card requires touch confirmation.
+
+To build without the notification mechanism (not recommended), you can use the `--no-default-features` parameter.
 
 # Credit
 
