@@ -28,10 +28,69 @@ struct Backend {
 }
 
 impl Backend {
-    fn new() -> Self {
-        Self {
+    async fn new() -> Self {
+        let mut backend = Self {
             cards: Default::default(),
+        };
+
+        let idents = openpgp_card_state::list().await;
+
+        for ident in idents {
+            println!("trying to add card {}", ident);
+
+            let (pin, _nick) = openpgp_card_state::get(&ident).await;
+
+            if let Err(e) = backend.add_card(&ident, &pin) {
+                println!("failed to add card {:?}, ignoring", e);
+            }
         }
+
+        backend
+    }
+
+    fn add_card(&mut self, ident: &str, pin: &str) -> Result<(), anyhow::Error> {
+        log::debug!("add card {}", ident);
+
+        // try if pin is ok, then remember ident and pin
+        let mut opgp = card_by_ident(ident)?;
+        let mut open = opgp.transaction()?;
+
+        open.verify_pw1_user(pin.as_bytes())?;
+
+        if let Ok(pubkey) = open.public_key(KeyType::Authentication) {
+            // Get ssh public key representation(s)
+            match get_ssh_pubkey(&pubkey) {
+                Ok(pk) => {
+                    let sc = SshCard {
+                        ident: ident.to_string(),
+                        pin: pin.to_string(),
+                        auth_pub: pubkey,
+                        ssh_pubkey_blob: pk.data(),
+                    };
+
+                    let cards = Arc::clone(&self.cards);
+                    let mut cards = cards.lock().unwrap();
+                    let cards = cards.borrow_mut();
+
+                    log::debug!("cards insert {:?}", sc);
+
+                    // remove list entries that have the same card ident as this one
+                    cards.retain(|c| c.ident != sc.ident);
+
+                    // append new SshCard to our list
+                    cards.push(sc);
+                }
+                Err(e) => {
+                    log::debug!("Failed to transform pkm with get_ssh_pubkey: {:?}", e);
+                    panic!("Failed to transform pkm with get_ssh_pubkey: {:?}", e);
+                }
+            }
+        } else {
+            log::debug!("Couldn't get auth key from card");
+            panic!("Couldn't get auth key from card")
+        }
+
+        Ok(())
     }
 }
 
@@ -124,54 +183,9 @@ impl Agent for Backend {
         log::trace!("handle: request {:X?}", request);
 
         match request {
-            Message::AddSmartcardKey(key) => {
+            Message::AddSmartcardKey(_key) => {
                 // When running "ssh-add -s", this call gives us an `id` and a `pin`
-
-                log::debug!("AddSmartcardKey -> {}", key.id);
-                let ident = key.id;
-                let pin = key.pin;
-
-                // try if pin is ok, then remember ident and pin
-                let mut opgp = card_by_ident(&ident)?;
-                let mut open = opgp.transaction()?;
-
-                open.verify_pw1_user(pin.as_bytes())?;
-
-                if let Ok(pubkey) = open.public_key(KeyType::Authentication) {
-                    // Get ssh public key representation(s)
-                    match get_ssh_pubkey(&pubkey) {
-                        Ok(pk) => {
-                            let sc = SshCard {
-                                ident,
-                                pin,
-                                auth_pub: pubkey,
-                                ssh_pubkey_blob: pk.data(),
-                            };
-
-                            let cards = Arc::clone(&self.cards);
-                            let mut cards = cards.lock().unwrap();
-                            let cards = cards.borrow_mut();
-
-                            log::debug!("cards insert {:?}", sc);
-
-                            // remove list entries that have the same card ident as this one
-                            cards.retain(|c| c.ident != sc.ident);
-
-                            // append new SshCard to our list
-                            cards.push(sc);
-
-                            Ok(Message::Success)
-                        }
-                        Err(e) => {
-                            log::debug!("Failed to transform pkm with get_ssh_pubkey: {:?}", e);
-
-                            Ok(Message::Failure)
-                        }
-                    }
-                } else {
-                    log::debug!("Couldn't get auth key from card");
-                    Ok(Message::Failure)
-                }
+                todo!();
             }
             Message::RequestIdentities => {
                 // This is triggered by "ssh-add -L" (and during login operations)
@@ -418,12 +432,13 @@ struct Args {
     host: Binding,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
     let args = Args::parse();
 
-    let agent = Backend::new();
+    let agent = Backend::new().await;
     match agent.listen(args.host.try_into()?) {
         Err(e) => log::debug!("fn=main listener=OK at=bind err={:?}", e),
         Ok(_) => log::debug!("Listening done!"),
