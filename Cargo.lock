@@ -1403,6 +1403,8 @@ dependencies = [
 [[package]]
 name = "openpgp-card-state"
 version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c621a55172b783839fcf0c6670ab77c2077cd184fce1e4590ced7a825cda57ab"
 dependencies = [
  "clap 4.5.1",
  "futures",
