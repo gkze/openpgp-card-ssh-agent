@@ -214,7 +214,7 @@ impl Agent for Backend {
                         tx.verify_pw1_user(pin.as_bytes())?;
 
                         // Notification function
-                        let touch_prompt = move || {
+                        let touch_prompt = || async {
                             #[cfg(feature = "notify")]
                             if let Err(e) = notify_rust::Notification::new()
                                 .summary("openpgp-card-ssh-agent")
@@ -222,7 +222,8 @@ impl Agent for Backend {
                                     "Touch confirmation needed for ssh auth on card {}",
                                     &ident
                                 ))
-                                .show()
+                                .show_async()
+                                .await
                             {
                                 eprintln!("Failure in notify_rust: {:?}", e);
                             }
@@ -237,7 +238,7 @@ impl Agent for Backend {
                             // - the card supports the feature
                             // - and the policy requires touch
                             if uif.touch_policy().touch_required() {
-                                touch_prompt();
+                                touch_prompt().await;
                             }
                         };
 
