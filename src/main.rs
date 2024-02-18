@@ -176,10 +176,11 @@ fn get_ssh_pubkey(
     }
 }
 
+#[async_trait::async_trait]
 impl Agent for Backend {
     type Error = openpgp_card::Error;
 
-    fn handle(&self, request: Message) -> Result<Message, Self::Error> {
+    async fn handle(&self, request: Message) -> Result<Message, Self::Error> {
         log::trace!("handle: request {:X?}", request);
 
         match request {
@@ -439,7 +440,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let agent = Backend::new().await;
-    match agent.listen(args.host.try_into()?) {
+    let binding = args.host;
+    let listener: service_binding::Listener = binding.try_into()?;
+    let x = match listener {
+        service_binding::Listener::Unix(listener) => {
+            agent.listen(tokio::net::UnixListener::from_std(listener)?)
+        }
+        service_binding::Listener::Tcp(listener) => {
+            agent.listen(tokio::net::TcpListener::from_std(listener)?)
+        }
+    };
+    match x.await {
         Err(e) => log::debug!("fn=main listener=OK at=bind err={:?}", e),
         Ok(_) => log::debug!("Listening done!"),
     }
