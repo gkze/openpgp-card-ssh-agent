@@ -5,6 +5,8 @@
 mod card;
 mod ssh;
 
+use std::time::Duration;
+
 use clap::Parser;
 use openpgp_card::crypto_data::Hash;
 use service_binding::Binding;
@@ -68,6 +70,7 @@ impl Agent for Backend {
                                     "Touch confirmation needed for ssh auth on card {}",
                                     &ident
                                 ))
+                                .timeout(Duration::from_secs(15))
                                 .show_async()
                                 .await
                             {
