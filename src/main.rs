@@ -10,17 +10,16 @@ use std::time::Duration;
 use clap::Parser;
 use openpgp_card::crypto_data::Hash;
 use service_binding::Binding;
-use ssh_agent_lib::agent::Agent;
+use ssh_agent_lib::agent::{Agent, Session};
+use ssh_agent_lib::error::AgentError;
 use ssh_agent_lib::proto::{Blob, Message};
 
 #[derive(Default)]
-struct Backend {}
+struct Backend;
 
-#[async_trait::async_trait]
-impl Agent for Backend {
-    type Error = openpgp_card::Error;
-
-    async fn handle(&self, request: Message) -> Result<Message, Self::Error> {
+#[ssh_agent_lib::async_trait]
+impl Session for Backend {
+    async fn handle(&mut self, request: Message) -> Result<Message, AgentError> {
         log::trace!("handle: request {:X?}", request);
 
         match request {
@@ -47,10 +46,12 @@ impl Agent for Backend {
                 let res = card::card_by_ssh_blob(&request.pubkey_blob);
 
                 if let Some((mut card, pkm)) = res {
-                    let mut tx = card.transaction()?;
+                    let mut tx = card.transaction().map_err(|_| AgentError::User)?;
 
-                    let ard = tx.application_related_data()?;
-                    let ident = ard.application_id()?.ident();
+                    let ard = tx
+                        .application_related_data()
+                        .map_err(|_| AgentError::User)?;
+                    let ident = ard.application_id().map_err(|_| AgentError::User)?.ident();
 
                     log::debug!("Using card {:?}", ident);
 
@@ -59,7 +60,8 @@ impl Agent for Backend {
                     {
                         // Get User PIN from the state backend and present it to the card
                         let (pin, _) = openpgp_card_state::get(&ident).await;
-                        tx.verify_pw1_user(pin.as_bytes())?;
+                        tx.verify_pw1_user(pin.as_bytes())
+                            .map_err(|_| AgentError::User)?;
 
                         // Notification function
                         let touch_prompt = || async {
@@ -93,12 +95,12 @@ impl Agent for Backend {
 
                         // Perform signing operation on the card, and process signature
                         if let Ok(signature) = match sig_scheme {
-                            "rsa-sha2-256" => {
-                                tx.authenticate_for_hash(Hash::SHA256(digest.try_into().unwrap()))
-                            }
-                            "rsa-sha2-512" => {
-                                tx.authenticate_for_hash(Hash::SHA512(digest.try_into().unwrap()))
-                            }
+                            "rsa-sha2-256" => tx.authenticate_for_hash(Hash::SHA256(
+                                digest.try_into().map_err(|_| AgentError::User)?,
+                            )),
+                            "rsa-sha2-512" => tx.authenticate_for_hash(Hash::SHA512(
+                                digest.try_into().map_err(|_| AgentError::User)?,
+                            )),
                             _ => tx.internal_authenticate(digest),
                         } {
                             log::debug!("sig from card: {:?}", signature);
@@ -130,7 +132,7 @@ impl Agent for Backend {
                                     let data = ssh_agent_lib::proto::EcDsaSignatureData { r, s };
                                     log::trace!("{:x?}", data);
 
-                                    data.to_blob().unwrap() // FIXME: unwrap
+                                    data.to_blob().map_err(|_| AgentError::User)?
                                 }
                                 _ => {
                                     log::error!("Unexpected sig_scheme {sig_scheme}");
@@ -145,7 +147,9 @@ impl Agent for Backend {
 
                             log::trace!("ssh signature: {:?} [len {}]", s, s.blob.len());
 
-                            Ok(Message::SignResponse(s.to_blob().unwrap()))
+                            Ok(Message::SignResponse(
+                                s.to_blob().map_err(|_| AgentError::User)?,
+                            ))
                         } else {
                             log::debug!("Sign operation failed");
 
@@ -184,18 +188,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let agent = Backend::default();
-
     let listener: service_binding::Listener = args.host.try_into()?;
-    let x = match listener {
+    let handler = match listener {
         service_binding::Listener::Unix(listener) => {
-            agent.listen(tokio::net::UnixListener::from_std(listener)?)
+            Backend.listen(tokio::net::UnixListener::from_std(listener)?)
         }
         service_binding::Listener::Tcp(listener) => {
-            agent.listen(tokio::net::TcpListener::from_std(listener)?)
+            Backend.listen(tokio::net::TcpListener::from_std(listener)?)
         }
     };
-    match x.await {
+    match handler.await {
         Err(e) => log::debug!("fn=main listener=OK at=bind err={:?}", e),
         Ok(_) => log::debug!("Listening done!"),
     }

@@ -24,8 +24,7 @@ env_logger = "0.11"
 log = "0.4"
 clap = { version = "3", features = ["derive", "env"] }
 
-ssh-agent-lib = { git = "https://github.com/wiktor-k/ssh-agent-lib", rev="refs/pull/10/head" }
-async-trait = "0.1.77"
+ssh-agent-lib = "0.3.0"
 tokio = { version = "1.36.0", features = ["full"] }
 service-binding = "^0.3.0"
 

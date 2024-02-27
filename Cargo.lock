@@ -1385,7 +1385,6 @@ name = "openpgp-card-ssh-agent"
 version = "0.2.0-pre"
 dependencies = [
  "anyhow",
- "async-trait",
  "card-backend-pcsc",
  "clap 3.2.25",
  "env_logger",
@@ -1863,8 +1862,9 @@ dependencies = [
 
 [[package]]
 name = "ssh-agent-lib"
-version = "0.3.0-pre"
-source = "git+https://github.com/wiktor-k/ssh-agent-lib?rev=refs/pull/10/head#1472f44c3318652775f405d70820063beb726410"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d157019b1d0e0b34d945ca2a1354c004a6ac5502daa784e4d0a05f919c358c47"
 dependencies = [
  "async-trait",
  "byteorder",
