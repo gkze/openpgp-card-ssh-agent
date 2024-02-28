@@ -22,7 +22,10 @@ pub(crate) fn list_ssh_identities() -> Result<Vec<Identity>, Box<dyn std::error:
             if let Ok(ssh) = get_ssh_pubkey(&pubkey) {
                 let id = Identity {
                     pubkey_blob: ssh.data(),
-                    comment: "".to_string(),
+                    comment: tx
+                        .application_identifier()
+                        .map(|aid| aid.ident())
+                        .unwrap_or("Unknown card".to_string()),
                 };
 
                 ids.push(id);
