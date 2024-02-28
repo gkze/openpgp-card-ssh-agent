@@ -79,13 +79,45 @@ impl Session for Backend {
                     {
                         // Get User PIN from the state backend and present it to the card
                         if let Ok(pin) = openpgp_card_state::get(&ident) {
-                            tx.verify_pw1_user(pin.as_bytes())
-                                .map_err(|_| AgentError::User)?;
+                            if tx.verify_pw1_user(pin.as_bytes()).is_err() {
+                                // User PIN verification against the card failed. Bad PIN?
+
+                                #[cfg(feature = "notify")]
+                                if let Err(e) = notify_rust::Notification::new()
+                                    .summary("openpgp-card-ssh-agent")
+                                    .body(&format!(
+                                        "ERROR: The stored User PIN for OpenPGP card '{}' seems to be wrong or blocked!",
+                                        &ident
+                                    ))
+                                    .timeout(Duration::from_secs(15))
+                                    .show_async()
+                                    .await
+                                {
+                                    log::debug!("Failure in notify_rust: {:?}", e);
+                                }
+
+                                return Ok(Message::Failure);
+                            }
                         } else {
                             log::error!(
                                 "No User PIN for card {} found via openpgp_card_state",
                                 ident
                             );
+
+                            #[cfg(feature = "notify")]
+                            if let Err(e) = notify_rust::Notification::new()
+                                .summary("openpgp-card-ssh-agent")
+                                .body(&format!(
+                                    "No User PIN available for this OpenPGP card. You can persist it by running 'ssh-add -s {}'",
+                                    &ident
+                                ))
+                                .timeout(Duration::from_secs(15))
+                                .show_async()
+                                .await
+                            {
+                                log::debug!("Failure in notify_rust: {:?}", e);
+                            }
+
                             return Ok(Message::Failure);
                         }
 
@@ -102,7 +134,7 @@ impl Session for Backend {
                                 .show_async()
                                 .await
                             {
-                                eprintln!("Failure in notify_rust: {:?}", e);
+                                log::debug!("Failure in notify_rust: {:?}", e);
                             }
 
                             #[cfg(not(feature = "notify"))]
