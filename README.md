@@ -46,7 +46,7 @@ persistent, it is typically sufficient to persist a User PIN once per machine.
 
 See [openpgp-card-state](https://crates.io/crates/openpgp-card-state) for more details.
 
-### Via ssh-add
+### Storing the User PIN with ssh-add
 
 It's possible to store a card's User PIN using an ssh mechanism by providing the card's "ident":
 
@@ -60,22 +60,6 @@ Note that the message shows the string "PKCS#11", which is confusing, but can be
 At this prompt you can enter the User PIN (the default User PIN for many OpenPGP cards is `123456`). The PIN will get
 tested on the
 card, and only persisted if the card accepts it.
-
-### Using the separate openpgp-card-state CLI tool
-
-Alternatively you can use the low-level `openpgp-card-state` tool to persist the User PIN for your card:
-
-```
-$ openpgp-card-state put 0000:01234567 123456
-```
-
-You need to pass card's User PIN instead of `123456`, and your card's "ident" instead of `0000:01234567` (one way to
-find out your card's identifier is to run [`oct list`](https://codeberg.org/openpgp-card/openpgp-card-tools#list-cards))
-
-Note that this low-level tool doesn't validate the PIN against the OpenPGP card before persisting it.
-
-(Please consider if it's a problem if you leave a copy of your PIN in your shell history. And take steps to avoid it, if
-so!)
 
 ## Running the ssh agent
 
