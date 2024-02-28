@@ -59,9 +59,16 @@ impl Session for Backend {
                         ssh::signature_request_information(&request, &pkm)
                     {
                         // Get User PIN from the state backend and present it to the card
-                        let (pin, _) = openpgp_card_state::get(&ident).await;
-                        tx.verify_pw1_user(pin.as_bytes())
-                            .map_err(|_| AgentError::User)?;
+                        if let Ok(pin) = openpgp_card_state::get(&ident) {
+                            tx.verify_pw1_user(pin.as_bytes())
+                                .map_err(|_| AgentError::User)?;
+                        } else {
+                            log::error!(
+                                "No User PIN for card {} found via openpgp_card_state",
+                                ident
+                            );
+                            return Ok(Message::Failure);
+                        }
 
                         // Notification function
                         let touch_prompt = || async {
