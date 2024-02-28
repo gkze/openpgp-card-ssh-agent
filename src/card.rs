@@ -63,3 +63,25 @@ pub(crate) fn card_by_ssh_blob(blob: &[u8]) -> Option<(Card, PublicKeyMaterial)>
 
     None
 }
+
+pub(crate) fn card_by_ident(ident: &str) -> Result<Card, openpgp_card::Error> {
+    let backends = PcscBackend::cards(None)?;
+
+    for b in backends.filter_map(|c| c.ok()) {
+        let mut card = Card::new(b)?;
+
+        let aid = {
+            let mut tx = card.transaction()?;
+            tx.application_related_data()?
+        };
+
+        if aid.application_id()?.ident() == ident.to_ascii_uppercase() {
+            return Ok(card);
+        }
+    }
+
+    Err(openpgp_card::Error::NotFound(format!(
+        "Couldn't open card '{}'",
+        ident
+    )))
+}

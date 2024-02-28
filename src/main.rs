@@ -23,6 +23,25 @@ impl Session for Backend {
         log::trace!("handle: request {:X?}", request);
 
         match request {
+            Message::AddSmartcardKey(key) => {
+                // When running "ssh-add -s", this call gives us an `id` and a `pin`
+
+                log::debug!("AddSmartcardKey -> {}", key.id);
+                let ident = key.id;
+                let pin = key.pin;
+
+                // try if pin is ok, then remember ident and pin
+                let mut opgp = card::card_by_ident(&ident).map_err(|_| AgentError::User)?;
+                let mut open = opgp.transaction().map_err(|_| AgentError::User)?;
+
+                open.verify_pw1_user(pin.as_bytes())
+                    .map_err(|_| AgentError::User)?;
+
+                openpgp_card_state::put(&ident, &pin).map_err(|_| AgentError::User)?;
+
+                Ok(Message::Success)
+            }
+
             Message::RequestIdentities => {
                 // This is triggered by "ssh-add -L" (and during login operations)
                 log::debug!("RequestIdentities");
