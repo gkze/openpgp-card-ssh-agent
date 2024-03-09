@@ -90,8 +90,8 @@ impl Session for Backend {
                                         &ident
                                     ))
                                     .timeout(Duration::from_secs(15))
-                                    .show_async()
-                                    .await
+                                    .show()
+
                                 {
                                     log::debug!("Failure in notify_rust: {:?}", e);
                                 }
@@ -112,8 +112,8 @@ impl Session for Backend {
                                     &ident
                                 ))
                                 .timeout(Duration::from_secs(15))
-                                .show_async()
-                                .await
+                                .show()
+
                             {
                                 log::debug!("Failure in notify_rust: {:?}", e);
                             }
@@ -122,7 +122,7 @@ impl Session for Backend {
                         }
 
                         // Notification function
-                        let touch_prompt = || async {
+                        let touch_prompt = || {
                             #[cfg(feature = "notify")]
                             if let Err(e) = notify_rust::Notification::new()
                                 .summary("openpgp-card-ssh-agent")
@@ -131,8 +131,7 @@ impl Session for Backend {
                                     &ident
                                 ))
                                 .timeout(Duration::from_secs(15))
-                                .show_async()
-                                .await
+                                .show()
                             {
                                 log::debug!("Failure in notify_rust: {:?}", e);
                             }
@@ -147,7 +146,7 @@ impl Session for Backend {
                             // - the card supports the feature
                             // - and the policy requires touch
                             if uif.touch_policy().touch_required() {
-                                touch_prompt().await;
+                                touch_prompt();
                             }
                         };
 
