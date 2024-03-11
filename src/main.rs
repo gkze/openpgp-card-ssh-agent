@@ -17,6 +17,17 @@ use ssh_agent_lib::proto::{Blob, Message};
 #[derive(Default)]
 struct Backend;
 
+fn notify(msg: &str) {
+    log::error!("{}", msg);
+
+    #[cfg(feature = "notify")]
+    let _ = notify_rust::Notification::new()
+        .summary("openpgp-card-ssh-agent")
+        .body(msg)
+        .timeout(Duration::from_secs(15))
+        .show();
+}
+
 #[ssh_agent_lib::async_trait]
 impl Session for Backend {
     async fn handle(&mut self, request: Message) -> Result<Message, AgentError> {
@@ -31,25 +42,30 @@ impl Session for Backend {
                 let pin = key.pin;
 
                 // try if pin is ok, then remember ident and pin
-                let mut opgp = card::card_by_ident(&ident).map_err(|_| AgentError::User)?;
-                let mut open = opgp.transaction().map_err(|_| AgentError::User)?;
+                let mut opgp = card::card_by_ident(&ident).map_err(|e| {
+                    notify(&format!("Couldn't open the card {}: {}", ident, e));
+                    AgentError::User
+                })?;
+                let mut open = opgp.transaction().map_err(|e| {
+                    notify(&format!(
+                        "Couldn't open transaction on card {}: {}",
+                        ident, e
+                    ));
+                    AgentError::User
+                })?;
 
-                open.verify_pw1_user(pin.as_bytes())
-                    .map_err(|_| AgentError::User)?;
+                open.verify_pw1_user(pin.as_bytes()).map_err(|e| {
+                    notify(&format!(
+                        "User PIN verification failed on card {}: {}",
+                        ident, e
+                    ));
+                    AgentError::User
+                })?;
 
-                let res = openpgp_card_state::put(&ident, &pin);
-                if let Err(e) = res {
-                    log::error!("Error while persisting User PIN: {}", e);
-
-                    #[cfg(feature = "notify")]
-                    let _ = notify_rust::Notification::new()
-                        .summary("openpgp-card-ssh-agent")
-                        .body(&format!("Error while storing User PIN: {}", e))
-                        .timeout(Duration::from_secs(15))
-                        .show();
-
-                    return Err(AgentError::User);
-                }
+                openpgp_card_state::put(&ident, &pin).map_err(|e| {
+                    notify(&format!("Error while storing User PIN: {}", e));
+                    AgentError::User
+                })?;
 
                 Ok(Message::Success)
             }
