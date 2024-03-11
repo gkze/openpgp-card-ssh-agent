@@ -37,7 +37,19 @@ impl Session for Backend {
                 open.verify_pw1_user(pin.as_bytes())
                     .map_err(|_| AgentError::User)?;
 
-                openpgp_card_state::put(&ident, &pin).map_err(|_| AgentError::User)?;
+                let res = openpgp_card_state::put(&ident, &pin);
+                if let Err(e) = res {
+                    log::error!("Error while persisting User PIN: {}", e);
+
+                    #[cfg(feature = "notify")]
+                    let _ = notify_rust::Notification::new()
+                        .summary("openpgp-card-ssh-agent")
+                        .body(&format!("Error while storing User PIN: {}", e))
+                        .timeout(Duration::from_secs(15))
+                        .show();
+
+                    return Err(AgentError::User);
+                }
 
                 Ok(Message::Success)
             }
@@ -91,7 +103,6 @@ impl Session for Backend {
                                     ))
                                     .timeout(Duration::from_secs(15))
                                     .show()
-
                                 {
                                     log::debug!("Failure in notify_rust: {:?}", e);
                                 }
