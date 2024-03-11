@@ -18,14 +18,20 @@ use ssh_agent_lib::proto::{Blob, Message};
 struct Backend;
 
 fn notify(msg: &str) {
-    log::error!("{}", msg);
-
     #[cfg(feature = "notify")]
-    let _ = notify_rust::Notification::new()
+    if let Err(e) = notify_rust::Notification::new()
         .summary("openpgp-card-ssh-agent")
         .body(msg)
         .timeout(Duration::from_secs(15))
-        .show();
+        .show()
+    {
+        log::debug!("Failure in notify_rust: {:?}", e);
+    }
+}
+
+fn notify_and_log(msg: &str) {
+    log::error!("{}", msg);
+    notify(msg);
 }
 
 #[ssh_agent_lib::async_trait]
@@ -43,11 +49,11 @@ impl Session for Backend {
 
                 // try if pin is ok, then remember ident and pin
                 let mut opgp = card::card_by_ident(&ident).map_err(|e| {
-                    notify(&format!("Couldn't open the card {}: {}", ident, e));
+                    notify_and_log(&format!("Couldn't open the card {}: {}", ident, e));
                     AgentError::User
                 })?;
                 let mut open = opgp.transaction().map_err(|e| {
-                    notify(&format!(
+                    notify_and_log(&format!(
                         "Couldn't open transaction on card {}: {}",
                         ident, e
                     ));
@@ -55,7 +61,7 @@ impl Session for Backend {
                 })?;
 
                 open.verify_pw1_user(pin.as_bytes()).map_err(|e| {
-                    notify(&format!(
+                    notify_and_log(&format!(
                         "User PIN verification failed on card {}: {}",
                         ident, e
                     ));
@@ -63,7 +69,7 @@ impl Session for Backend {
                 })?;
 
                 openpgp_card_state::put(&ident, &pin).map_err(|e| {
-                    notify(&format!("Error while storing User PIN: {}", e));
+                    notify_and_log(&format!("Error while storing User PIN: {}", e));
                     AgentError::User
                 })?;
 
@@ -109,19 +115,9 @@ impl Session for Backend {
                         if let Ok(pin) = openpgp_card_state::get(&ident) {
                             if tx.verify_pw1_user(pin.as_bytes()).is_err() {
                                 // User PIN verification against the card failed. Bad PIN?
-
-                                #[cfg(feature = "notify")]
-                                if let Err(e) = notify_rust::Notification::new()
-                                    .summary("openpgp-card-ssh-agent")
-                                    .body(&format!(
-                                        "ERROR: The stored User PIN for OpenPGP card '{}' seems to be wrong or blocked!",
-                                        &ident
-                                    ))
-                                    .timeout(Duration::from_secs(15))
-                                    .show()
-                                {
-                                    log::debug!("Failure in notify_rust: {:?}", e);
-                                }
+                                notify_and_log(&format!(
+                                    "ERROR: The stored User PIN for OpenPGP card '{}' seems to be wrong or blocked!",
+                                    &ident));
 
                                 return Ok(Message::Failure);
                             }
@@ -131,37 +127,19 @@ impl Session for Backend {
                                 ident
                             );
 
-                            #[cfg(feature = "notify")]
-                            if let Err(e) = notify_rust::Notification::new()
-                                .summary("openpgp-card-ssh-agent")
-                                .body(&format!(
-                                    "No User PIN available for this OpenPGP card. You can persist it by running 'ssh-add -s {}'",
-                                    &ident
-                                ))
-                                .timeout(Duration::from_secs(15))
-                                .show()
-
-                            {
-                                log::debug!("Failure in notify_rust: {:?}", e);
-                            }
+                            notify(&format!(
+                                "No User PIN available for this OpenPGP card. You can persist it by running 'ssh-add -s {}'",
+                                &ident));
 
                             return Ok(Message::Failure);
                         }
 
                         // Notification function
                         let touch_prompt = || {
-                            #[cfg(feature = "notify")]
-                            if let Err(e) = notify_rust::Notification::new()
-                                .summary("openpgp-card-ssh-agent")
-                                .body(&format!(
-                                    "Touch confirmation needed for ssh auth on card {}",
-                                    &ident
-                                ))
-                                .timeout(Duration::from_secs(15))
-                                .show()
-                            {
-                                log::debug!("Failure in notify_rust: {:?}", e);
-                            }
+                            notify(&format!(
+                                "Touch confirmation needed for ssh auth on card {}",
+                                &ident
+                            ));
 
                             #[cfg(not(feature = "notify"))]
                             println!("Touch confirmation needed for ssh auth on card {}", &ident);
