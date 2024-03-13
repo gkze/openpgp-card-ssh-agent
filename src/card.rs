@@ -50,6 +50,8 @@ fn normalize(public_key: &mut PublicKey) {
     }
 }
 
+// FIXME: replace with a filter function, so main can directly iterate over cards.
+// Main shouldn't need to re-open a transaction.
 pub(crate) fn card_by_ssh_blob(blob: &[u8]) -> Option<(Card, PublicKeyMaterial)> {
     let Ok(backends) = PcscBackend::cards(None) else {
         return None;
@@ -89,6 +91,8 @@ pub(crate) fn card_by_ssh_blob(blob: &[u8]) -> Option<(Card, PublicKeyMaterial)>
     None
 }
 
+// FIXME: replace with a filter function, so main can directly iterate over cards.
+// Main shouldn't need to re-open a transaction.
 pub(crate) fn card_by_ident(ident: &str) -> Result<Card, openpgp_card::Error> {
     let backends = PcscBackend::cards(None)?;
 

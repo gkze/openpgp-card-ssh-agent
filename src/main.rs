@@ -47,7 +47,7 @@ impl Session for Backend {
                 let ident = key.id;
                 let pin = key.pin;
 
-                // try if pin is ok, then remember ident and pin
+                // Open the card with identifier `ident`
                 let mut opgp = card::card_by_ident(&ident).map_err(|e| {
                     notify_and_log(&format!("Couldn't open the card {}: {}", ident, e));
                     AgentError::User
@@ -60,6 +60,7 @@ impl Session for Backend {
                     AgentError::User
                 })?;
 
+                // Check if the card agrees with this User PIN
                 open.verify_pw1_user(pin.as_bytes()).map_err(|e| {
                     notify_and_log(&format!(
                         "User PIN verification failed on card {}: {}",
@@ -68,6 +69,7 @@ impl Session for Backend {
                     AgentError::User
                 })?;
 
+                // The card liked this User PIN, we persist it via openpgp_card_state
                 openpgp_card_state::put(&ident, &pin).map_err(|e| {
                     notify_and_log(&format!("Error while storing User PIN: {}", e));
                     AgentError::User
