@@ -183,7 +183,7 @@ impl Session for Backend {
                             )),
                             _ => tx.internal_authenticate(digest),
                         } {
-                            log::debug!("sig from card: {:?}", signature);
+                            log::debug!("sig from card: {:02x?}", signature);
 
                             let data = match sig_scheme {
                                 "rsa-sha2-256" | "rsa-sha2-512" => signature,
