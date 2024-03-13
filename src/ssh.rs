@@ -85,7 +85,7 @@ pub(crate) fn signature_request_information(
             } else if request.flags & SSH_AGENT_RSA_SHA2_512 != 0 {
                 let mut hasher = sha2::Sha512::new();
                 hasher.update(&request.data);
-                Some(("rsa-sha2-256", hasher.finalize().to_vec()))
+                Some(("rsa-sha2-512", hasher.finalize().to_vec()))
             } else {
                 log::error!("Unexpected RSA case");
                 return None;
