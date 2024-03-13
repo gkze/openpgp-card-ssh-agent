@@ -35,31 +35,45 @@ $ cargo install --path .
 
 ## Persisting your OpenPGP card's User PIN
 
-This ssh-agent uses OpenPGP card hardware to perform private key cryptographic operations. These cards require a User
-PIN to authorize operations.
+This ssh-agent uses [OpenPGP card](https://en.wikipedia.org/wiki/OpenPGP_card) hardware to perform private key
+cryptographic operations. These cards require a User PIN to authorize operations.
 
-In this application, it is assumed that the User PIN is persisted on your host computer and that it can be obtained by
-the ssh-agent application without requiring any user-interaction.
+This ssh-agent requires that the User PIN for your card is persisted on your host computer, and that the PIN can be
+obtained by the ssh-agent - ideally without requiring any user-interaction.
 
 OpenPGP card User PINs is stored in a platform-specific secrets storage mechanism. Those stores are long-term
 persistent, it is typically sufficient to persist a User PIN once per machine.
-
 See [openpgp-card-state](https://crates.io/crates/openpgp-card-state) for more details.
 
 ### Storing the User PIN with ssh-add
 
-It's possible to store a card's User PIN using an ssh mechanism by providing the card's "ident":
+To store a card's User PIN, you can use the `ssh-add` command and provide the card's "ident" (here: `0000:01234567`):
 
 ```
 $ ssh-add -s 0000:01234567
 Enter passphrase for PKCS#11:
 ```
 
-Note that the message shows the string "PKCS#11", which is confusing, but can be safely ignored.
+The message says that a "passphrase for PKCS#11" should be entered. This is inapplicable and confusing, when using this
+ssh-agent. However, this string is hard coded in ssh and the wording of this message can be safely ignored.
 
 At this prompt you can enter the User PIN (the default User PIN for many OpenPGP cards is `123456`). The PIN will get
-tested on the
-card, and only persisted if the card accepts it.
+tested on the card, and persisted if the card accepts it as valid.
+
+### Listing all OpenPGP cards
+
+If you're unsure about your card's ident, you can list all cards that are attached to your computer like this:
+
+```
+$ ssh-add -L
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFKjA9vr4sa4WznatwBo05LrmZ2jogj3fyrQ5hNLYsFT 0000:01234567
+```
+
+This output shows you the public key material in your card's authentication key slot, and the card's identifier
+(here: `0000:01234567`). You can use that identifier to store the User PIN, as described above
+(with `ssh-add -s 0000:01234567`).
+
+Note that this list doesn't show if a PIN has been stored for a card, already.
 
 ## Running the ssh agent
 
@@ -107,4 +121,5 @@ To build without the notification mechanism (not recommended), you can use the `
 
 # Credit
 
-This project is based *very* heavily on work by Wiktor Kwapisiewicz <wiktor@metacode.biz>.
+This project is based *very* heavily on work by Wiktor Kwapisiewicz <wiktor@metacode.biz>. Much of the heavy ssh lifting
+is happening in [ssh-agent-lib](https://crates.io/crates/ssh-agent-lib).
