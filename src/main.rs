@@ -101,8 +101,8 @@ impl Session for Backend {
                 let res = card::card_by_ssh_blob(&request.pubkey_blob);
 
                 if let Some((mut card, pkm)) = res {
-                    let mut tx = card.transaction().map_err(|_| {
-                        log::debug!("failed to re-start transaction");
+                    let mut tx = card.transaction().map_err(|e| {
+                        log::debug!("failed to re-start transaction: {}", e);
                         AgentError::User
                     })?;
 
