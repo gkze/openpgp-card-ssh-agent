@@ -106,10 +106,17 @@ impl Session for Backend {
                         AgentError::User
                     })?;
 
-                    let ard = tx
-                        .application_related_data()
-                        .map_err(|_| AgentError::User)?;
-                    let ident = ard.application_id().map_err(|_| AgentError::User)?.ident();
+                    let ard = tx.application_related_data().map_err(|e| {
+                        log::debug!("failed to get application_related_data: {}", e);
+                        AgentError::User
+                    })?;
+                    let ident = ard
+                        .application_id()
+                        .map_err(|e| {
+                            log::debug!("failed to get application_id: {}", e);
+                            AgentError::User
+                        })?
+                        .ident();
 
                     log::debug!("Using card {:?}", ident);
 
@@ -163,10 +170,16 @@ impl Session for Backend {
                         // Perform signing operation on the card, and process signature
                         if let Ok(signature) = match sig_scheme {
                             "rsa-sha2-256" => tx.authenticate_for_hash(Hash::SHA256(
-                                digest.try_into().map_err(|_| AgentError::User)?,
+                                digest.try_into().map_err(|e| {
+                                    log::debug!("failed to map rsa-sha2-256 digest: {:02x?}", e);
+                                    AgentError::User
+                                })?,
                             )),
                             "rsa-sha2-512" => tx.authenticate_for_hash(Hash::SHA512(
-                                digest.try_into().map_err(|_| AgentError::User)?,
+                                digest.try_into().map_err(|e| {
+                                    log::debug!("failed to map rsa-sha2-512 digest: {:02x?}", e);
+                                    AgentError::User
+                                })?,
                             )),
                             _ => tx.internal_authenticate(digest),
                         } {
@@ -199,7 +212,13 @@ impl Session for Backend {
                                     let data = ssh_agent_lib::proto::EcDsaSignatureData { r, s };
                                     log::trace!("{:x?}", data);
 
-                                    data.to_blob().map_err(|_| AgentError::User)?
+                                    data.to_blob().map_err(|e| {
+                                        log::debug!(
+                                            "failed to get blob for EcDsaSignatureData: {}",
+                                            e
+                                        );
+                                        AgentError::User
+                                    })?
                                 }
                                 _ => {
                                     log::error!("Unexpected sig_scheme {sig_scheme}");
