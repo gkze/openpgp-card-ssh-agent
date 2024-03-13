@@ -50,6 +50,12 @@ pub(crate) fn card_by_ssh_blob(blob: &[u8]) -> Option<(Card, PublicKeyMaterial)>
                 if let Ok(mut tx) = card.transaction() {
                     if let Ok(pubkey) = tx.public_key(KeyType::Authentication) {
                         if let Ok(ssh) = get_ssh_pubkey(&pubkey) {
+                            log::debug!(
+                                "card_by_ssh_blob: requested blob {:02x?}, found on card {:02x?}",
+                                blob,
+                                ssh.data()
+                            );
+
                             if ssh.data() == blob {
                                 pkm = Some(pubkey);
                             }
