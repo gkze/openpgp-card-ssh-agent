@@ -27,7 +27,13 @@ to `org.freedesktop.Secret` as a secrets storage backend.)
 
 ## Install
 
-This branch of openpgp-card-ssh-auth is still unreleased and can be installed from source by running:
+You can install the latest openpgp-card-ssh-agent from crates.io by running
+
+```
+$ cargo install openpgp-card-ssh-agent
+```
+
+Or from this repository, by checking out the code and running:
 
 ```
 $ cargo install --path .
