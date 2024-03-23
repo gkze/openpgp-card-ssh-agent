@@ -9,7 +9,6 @@ use clap::Parser;
 use openpgp_card::crypto_data::Hash;
 use service_binding::Binding;
 use ssh_agent_lib::agent::{Agent, Session};
-use ssh_agent_lib::error::AgentError;
 use ssh_agent_lib::proto::{Blob, Message};
 
 #[derive(Default)]
@@ -37,7 +36,7 @@ fn notify_and_log(msg: &str) {
 
 #[ssh_agent_lib::async_trait]
 impl Session for Backend {
-    async fn handle(&mut self, request: Message) -> Result<Message, AgentError> {
+    async fn handle(&mut self, request: Message) -> Result<Message, Box<dyn std::error::Error>> {
         log::trace!("handle: request {:X?}", request);
 
         match request {
@@ -51,14 +50,14 @@ impl Session for Backend {
                 // Open the card with identifier `ident`
                 let mut opgp = card::card_by_ident(&ident).map_err(|e| {
                     notify_and_log(&format!("Couldn't open the card {}: {}", ident, e));
-                    AgentError::User
+                    e
                 })?;
                 let mut open = opgp.transaction().map_err(|e| {
                     notify_and_log(&format!(
                         "Couldn't open transaction on card {}: {}",
                         ident, e
                     ));
-                    AgentError::User
+                    e
                 })?;
 
                 // Check if the card agrees with this User PIN
@@ -67,13 +66,13 @@ impl Session for Backend {
                         "User PIN verification failed on card {}: {}",
                         ident, e
                     ));
-                    AgentError::User
+                    e
                 })?;
 
                 // The card liked this User PIN, we persist it via openpgp_card_state
                 openpgp_card_state::set_pin(&ident, &pin).map_err(|e| {
                     notify_and_log(&format!("Error while storing User PIN: {}", e));
-                    AgentError::User
+                    e
                 })?;
 
                 Ok(Message::Success)
@@ -104,18 +103,18 @@ impl Session for Backend {
                 if let Some((mut card, pkm)) = res {
                     let mut tx = card.transaction().map_err(|e| {
                         log::debug!("failed to re-start transaction: {}", e);
-                        AgentError::User
+                        e
                     })?;
 
                     let ard = tx.application_related_data().map_err(|e| {
                         log::debug!("failed to get application_related_data: {}", e);
-                        AgentError::User
+                        e
                     })?;
                     let ident = ard
                         .application_id()
                         .map_err(|e| {
                             log::debug!("failed to get application_id: {}", e);
-                            AgentError::User
+                            e
                         })?
                         .ident();
 
@@ -190,13 +189,13 @@ impl Session for Backend {
                             "rsa-sha2-256" => tx.authenticate_for_hash(Hash::SHA256(
                                 digest.try_into().map_err(|e| {
                                     log::debug!("failed to map rsa-sha2-256 digest: {:02x?}", e);
-                                    AgentError::User
+                                    std::io::Error::other("convert")
                                 })?,
                             )),
                             "rsa-sha2-512" => tx.authenticate_for_hash(Hash::SHA512(
                                 digest.try_into().map_err(|e| {
                                     log::debug!("failed to map rsa-sha2-512 digest: {:02x?}", e);
-                                    AgentError::User
+                                    std::io::Error::other("convert")
                                 })?,
                             )),
                             _ => tx.internal_authenticate(digest),
@@ -235,7 +234,7 @@ impl Session for Backend {
                                             "failed to get blob for EcDsaSignatureData: {}",
                                             e
                                         );
-                                        AgentError::User
+                                        std::io::Error::other("convert")
                                     })?
                                 }
                                 _ => {
@@ -251,9 +250,7 @@ impl Session for Backend {
 
                             log::trace!("ssh signature: {:?} [len {}]", s, s.blob.len());
 
-                            Ok(Message::SignResponse(
-                                s.to_blob().map_err(|_| AgentError::User)?,
-                            ))
+                            Ok(Message::SignResponse(s.to_blob()?))
                         } else {
                             log::debug!("Sign operation failed");
 
@@ -291,17 +288,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
     let args = Args::parse();
-
-    let listener: service_binding::Listener = args.host.try_into()?;
-    let handler = match listener {
-        service_binding::Listener::Unix(listener) => {
-            Backend.listen(tokio::net::UnixListener::from_std(listener)?)
-        }
-        service_binding::Listener::Tcp(listener) => {
-            Backend.listen(tokio::net::TcpListener::from_std(listener)?)
-        }
-    };
-    match handler.await {
+    match Backend.bind(args.host.try_into()?).await {
         Err(e) => log::debug!("fn=main listener=OK at=bind err={:?}", e),
         Ok(_) => log::debug!("Listening done!"),
     }

@@ -24,9 +24,9 @@ env_logger = "0.11"
 log = "0.4"
 clap = { version = "3", features = ["derive", "env"] }
 
-ssh-agent-lib = "0.3.0"
+ssh-agent-lib = { version = "0.4.0" }
 tokio = { version = "1.36.0", features = ["full"] }
-service-binding = "^0.3.0"
+service-binding = { version = "^2" }
 
 openpgp-card = "0.4"
 card-backend-pcsc = "0.5"

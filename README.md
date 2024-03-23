@@ -93,12 +93,24 @@ To debug the operation of the agent, you can view debug output, e.g. by running 
 $ RUST_LOG=debug openpgp-card-ssh-agent -H unix://$XDG_RUNTIME_DIR/ocsa.sock
 ```
 
+On Windows, use the following format to use a Named Pipe:
+
+```
+$ openpgp-card-ssh-agent -H \\.\pipe\ocsa
+```
+
 ## Use
 
 To use this ssh-agent, you need to set the `SSH_AUTH_SOCK` environment variable:
 
 ```
 $ export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/ocsa.sock
+```
+
+Or, on Windows, set the variable to the Named Pipe:
+
+```
+set SSH_AUTH_SOCK=\\.\pipe\ocsa
 ```
 
 After that, regular ssh usage will work and automatically use any available OpenPGP cards for authentication:
@@ -124,6 +136,12 @@ This SSH agent uses the [notify-rust](https://crates.io/crates/notify-rust) crat
 touch confirmation.
 
 To build without the notification mechanism (not recommended), you can use the `--no-default-features` parameter.
+
+## Git for Windows
+
+If Git over SSH doesn't seem to use the Agent but a regular `ssh git@github.com` commands work then the problem is due to Git's bundled OpenSSH client which does not support Named Pipes.
+
+It's advisable to use Windows native implementation of OpenSSH by [selecting appropriate option](https://stackoverflow.com/a/71190226) during installation of Git for Windows.
 
 # Credit
 
