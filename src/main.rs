@@ -124,26 +124,43 @@ impl Session for Backend {
                         ssh::signature_request_information(&request, &pkm)
                     {
                         // Get User PIN from the state backend and present it to the card
-                        if let Ok(Some(pin)) = openpgp_card_state::get_pin(&ident) {
-                            if tx.verify_pw1_user(pin.as_bytes()).is_err() {
-                                // User PIN verification against the card failed. Bad PIN?
-                                notify_and_log(&format!(
-                                    "ERROR: The stored User PIN for OpenPGP card '{}' seems to be wrong or blocked!",
+                        match openpgp_card_state::get_pin(&ident) {
+                            Ok(Some(pin)) => {
+                                // Our PIN backend has a User PIN for this ident
+                                if tx.verify_pw1_user(pin.as_bytes()).is_err() {
+                                    // .. but verification against the card failed. Bad PIN?
+
+                                    // We drop the PIN from the state backend, to avoid exhausting
+                                    // the retry counter and locking up the User PIN.
+                                    let res = openpgp_card_state::drop_pin(&ident);
+
+                                    if res.is_ok() {
+                                        notify_and_log(&format!(
+                                            "ERROR: The stored User PIN for OpenPGP card '{}' seems wrong or blocked! Dropped it from storage.",
+                                            &ident));
+                                    } else {
+                                        notify_and_log(&format!(
+                                            "ERROR: The stored User PIN for OpenPGP card '{}' seems wrong or blocked! In addition, dropping it from storage failed.",
+                                            &ident));
+                                    }
+
+                                    return Ok(Message::Failure);
+                                }
+                            }
+                            _ => {
+                                // FIXME: distinguish missing vs. error, later
+
+                                log::error!(
+                                    "No User PIN for card {} found via openpgp_card_state",
+                                    ident
+                                );
+
+                                notify(&format!(
+                                    "No User PIN available for this OpenPGP card. You can store a PIN by running 'ssh-add -s {}'",
                                     &ident));
 
                                 return Ok(Message::Failure);
                             }
-                        } else {
-                            log::error!(
-                                "No User PIN for card {} found via openpgp_card_state",
-                                ident
-                            );
-
-                            notify(&format!(
-                                "No User PIN available for this OpenPGP card. You can persist it by running 'ssh-add -s {}'",
-                                &ident));
-
-                            return Ok(Message::Failure);
                         }
 
                         // Notification function
