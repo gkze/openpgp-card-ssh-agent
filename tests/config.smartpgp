@@ -1,0 +1,6 @@
+[[cards]]
+ident = "AFAF:00001234"
+nickname = "Virtual SmartPGP card"
+
+[cards.pin_storage]
+Direct = ""

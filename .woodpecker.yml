@@ -29,6 +29,10 @@ steps:
       - /etc/init.d/dropbear start
       # Set up user account to ssh into
       - useradd testuser && mkdir -p /home/testuser/.ssh
+      # Card-state configuration to set PIN backend to "direct" (we don't have secret-service in CI)
+      - mkdir -p /root/.config/openpgp-card-state
+      - cp tests/config.opcard  /root/.config/openpgp-card-state/config.toml
+
       # Run/configure SSH Agent
       # (build without the default "notify" feature: its dependencies require a newer Rust version than this image has.)
       - cargo build --no-default-features
@@ -65,13 +69,17 @@ steps:
     pull: true
     commands:
       - . "$HOME/.cargo/env"
-      - apt update -y -qq && DEBIAN_FRONTEND=noninteractive apt install -y -qq dropbear expect
+      - apt update -y -qq && DEBIAN_FRONTEND=noninteractive apt install -y -qq dropbear expect openssh-client
       # Start pcscd, virtual OpenPGP card
       - sh /start.sh
       # Start dropbear ssh server (openssh-server seems hard to run in a container)
       - /etc/init.d/dropbear start
       # Set up user account to ssh into
       - useradd testuser && mkdir -p /home/testuser/.ssh
+      # Card-state configuration to set PIN backend to "direct" (we don't have secret-service in CI)
+      - mkdir -p /root/.config/openpgp-card-state
+      - cp tests/config.smartpgp /root/.config/openpgp-card-state/config.toml
+
       # Run/configure SSH Agent
       # (build without the default "notify" feature: its dependencies require a newer Rust version than this image has.)
       - cargo build --no-default-features

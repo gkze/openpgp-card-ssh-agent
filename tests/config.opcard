@@ -1,0 +1,6 @@
+[[cards]]
+ident = "0000:00000000"
+nickname = "Virtual Nitrokey opcard"
+
+[cards.pin_storage]
+Direct = ""
