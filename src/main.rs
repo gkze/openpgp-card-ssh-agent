@@ -70,7 +70,7 @@ impl Session for Backend {
                 })?;
 
                 // The card liked this User PIN, we persist it via openpgp_card_state
-                openpgp_card_state::put(&ident, &pin).map_err(|e| {
+                openpgp_card_state::set_pin(&ident, &pin).map_err(|e| {
                     notify_and_log(&format!("Error while storing User PIN: {}", e));
                     AgentError::User
                 })?;
@@ -124,7 +124,7 @@ impl Session for Backend {
                         ssh::signature_request_information(&request, &pkm)
                     {
                         // Get User PIN from the state backend and present it to the card
-                        if let Ok(pin) = openpgp_card_state::get(&ident) {
+                        if let Ok(Some(pin)) = openpgp_card_state::get_pin(&ident) {
                             if tx.verify_pw1_user(pin.as_bytes()).is_err() {
                                 // User PIN verification against the card failed. Bad PIN?
                                 notify_and_log(&format!(
