@@ -44,16 +44,34 @@ $ cargo install --path .
 This ssh-agent uses [OpenPGP card](https://en.wikipedia.org/wiki/OpenPGP_card) hardware to perform private key
 cryptographic operations. These cards require a User PIN to authorize operations.
 
-This ssh-agent requires that the User PIN for your card is persisted on your host computer, and that the PIN can be
-obtained by the ssh-agent - ideally without requiring any user-interaction.
+This ssh-agent assumes that the User PIN for your card is persisted on your host computer, and that the PIN can be
+obtained by the ssh-agent. Ideally without requiring any user-interaction.
 
-OpenPGP card User PINs is stored in a platform-specific secrets storage mechanism. Those stores are long-term
-persistent, it is typically sufficient to persist a User PIN once per machine.
+OpenPGP card User PINs are stored in a platform-specific secrets storage mechanism. Those stores are long-term
+persistent, so it is typically sufficient to persist a User PIN once per machine.
+
 See [openpgp-card-state](https://crates.io/crates/openpgp-card-state) for more details.
+
+### Listing OpenPGP cards
+
+To see which OpenPGP cards are connected to your machine and can be used with the ssh agent, you can use the `ssh-add`
+command to obtain a list from the ssh-agent, like this:
+
+```
+$ ssh-add -L
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFKjA9vr4sa4WznatwBo05LrmZ2jogj3fyrQ5hNLYsFT 0000:01234567
+```
+
+The output shows the public key material in your card's authentication key slot (shown in OpenSSH format), and the
+card's identifier (here: `0000:01234567`). You can use that identifier to store the User PIN, as described in the next
+section (using `ssh-add -s 0000:01234567`).
+
+Note that this list doesn't indicate if a PIN has been stored for a card, already.
 
 ### Storing the User PIN with ssh-add
 
-To store a card's User PIN, you can use the `ssh-add` command and provide the card's "ident" (here: `0000:01234567`):
+To store a card's User PIN on your system, you can use the `ssh-add` command and provide the card's "ident" (in this
+example: `0000:01234567`):
 
 ```
 $ ssh-add -s 0000:01234567
@@ -65,21 +83,6 @@ ssh-agent. However, this string is hard coded in ssh and the wording of this mes
 
 At this prompt you can enter the User PIN (the default User PIN for many OpenPGP cards is `123456`). The PIN will get
 tested on the card, and persisted if the card accepts it as valid.
-
-### Listing all OpenPGP cards
-
-If you're unsure about your card's ident, you can list all cards that are attached to your computer like this:
-
-```
-$ ssh-add -L
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFKjA9vr4sa4WznatwBo05LrmZ2jogj3fyrQ5hNLYsFT 0000:01234567
-```
-
-This output shows you the public key material in your card's authentication key slot, and the card's identifier
-(here: `0000:01234567`). You can use that identifier to store the User PIN, as described above
-(with `ssh-add -s 0000:01234567`).
-
-Note that this list doesn't show if a PIN has been stored for a card, already.
 
 ## Running the ssh agent
 
@@ -126,9 +129,19 @@ Cards that are plugged in after that ssh-agent is started will be automatically 
 
 ### Troubleshooting
 
-Note that GnuPG may lock cards by default. This can prevent other software, like this ssh-agent from accessing a card.
+#### Problems with access to OpenPGP card devices
+
+GnuPG may lock cards by default. This can prevent other software, like this ssh-agent from accessing a card.
 Killing the `scdaemon` process (which handles smart card access for GnuPG) is a simple way to debug problems with card
 access.
+
+#### Git for Windows
+
+Git access over SSH on Windows may fail to work with this ssh agent. If so, the cause is typically that Git on Windows
+comes with a bundled OpenSSH client which does not support Named Pipes.
+
+To resolve this, you should switch to use the "Windows native implementation of OpenSSH"
+by [selecting the appropriate option](https://stackoverflow.com/a/71190226) during installation of Git for Windows.
 
 ## Notifications for touch confirmation
 
@@ -136,12 +149,6 @@ This SSH agent uses the [notify-rust](https://crates.io/crates/notify-rust) crat
 touch confirmation.
 
 To build without the notification mechanism (not recommended), you can use the `--no-default-features` parameter.
-
-## Git for Windows
-
-If Git over SSH doesn't seem to use the Agent but a regular `ssh git@github.com` commands work then the problem is due to Git's bundled OpenSSH client which does not support Named Pipes.
-
-It's advisable to use Windows native implementation of OpenSSH by [selecting appropriate option](https://stackoverflow.com/a/71190226) during installation of Git for Windows.
 
 # Credit
 
