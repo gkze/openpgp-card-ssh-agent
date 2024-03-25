@@ -16,22 +16,20 @@ documentation = "https://docs.rs/openpgp-card-ssh-agent"
 
 [dependencies]
 anyhow = "1"
-sha2 = "0.10"
-openssh-keys = "0.6"
-openpgp-card-state = "0.1"
-
+clap = { version = "4" }
 env_logger = "0.11"
 log = "0.4"
-clap = { version = "3", features = ["derive", "env"] }
+notify-rust = { version = "4", optional = true }
+openssh-keys = "0.6"
+sha2 = "0.10"
 
 ssh-agent-lib = { version = "0.4" }
 tokio = { version = "1.36", features = ["full"] }
 service-binding = { version = "^2" }
 
 openpgp-card = "0.4"
+openpgp-card-state = "0.1"
 card-backend-pcsc = "0.5"
-
-notify-rust = { version = "4", optional = true }
 
 [profile.release]
 codegen-units = 1
