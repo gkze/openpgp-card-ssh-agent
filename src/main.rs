@@ -5,8 +5,6 @@
 mod card;
 mod ssh;
 
-use std::time::Duration;
-
 use clap::Parser;
 use openpgp_card::crypto_data::Hash;
 use service_binding::Binding;
@@ -17,17 +15,20 @@ use ssh_agent_lib::proto::{Blob, Message};
 #[derive(Default)]
 struct Backend;
 
+#[cfg(feature = "notify")]
 fn notify(msg: &str) {
-    #[cfg(feature = "notify")]
     if let Err(e) = notify_rust::Notification::new()
         .summary("openpgp-card-ssh-agent")
         .body(msg)
-        .timeout(Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(15))
         .show()
     {
         log::debug!("Failure in notify_rust: {:?}", e);
     }
 }
+
+#[cfg(not(feature = "notify"))]
+fn notify(_: &str) {}
 
 fn notify_and_log(msg: &str) {
     log::error!("{}", msg);
