@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2024 David Runge <dave@sleepmap.de>
+# SPDX-License-Identifier: CC0-1.0
+
+[Unit]
+Description=A simple ssh-agent backed by OpenPGP card authentication keys
+Documentation=https://codeberg.org/openpgp-card/ssh-agent man:ssh-add(1) man:ssh-agent(1) man:ssh(1)
+
+[Socket]
+ListenStream=%t/openpgp-card/ssh-agent.sock
+SocketMode=0600
+DirectoryMode=0700
+
+[Install]
+WantedBy=sockets.target
