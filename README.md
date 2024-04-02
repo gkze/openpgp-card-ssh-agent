@@ -22,9 +22,6 @@ This ssh-agent works, and you can use it right now.
 
 However, it's in an early development stage. We might break things temporarily, in the course of development.
 
-(E.g.: Windows support is currently broken in the 0.2 series, while `openpgp-card-state` is limited
-to `org.freedesktop.Secret` as a secrets storage backend.)
-
 ## Install
 
 You can install the latest openpgp-card-ssh-agent from crates.io by running
