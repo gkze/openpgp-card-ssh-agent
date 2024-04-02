@@ -149,5 +149,5 @@ To build without the notification mechanism (not recommended), you can use the `
 
 # Credit
 
-This project is based *very* heavily on work by Wiktor Kwapisiewicz <wiktor@metacode.biz>. Much of the heavy ssh lifting
+This project is based *very* heavily on work by [Wiktor Kwapisiewicz](https://metacode.biz/@wiktor). Much of the heavy ssh lifting
 is happening in [ssh-agent-lib](https://crates.io/crates/ssh-agent-lib).
