@@ -52,7 +52,7 @@ impl Session for Backend {
                     notify_and_log(&format!("Couldn't open the card {}: {}", ident, e));
                     e
                 })?;
-                let mut open = opgp.transaction().map_err(|e| {
+                let mut tx = opgp.transaction().map_err(|e| {
                     notify_and_log(&format!(
                         "Couldn't open transaction on card {}: {}",
                         ident, e
@@ -60,8 +60,25 @@ impl Session for Backend {
                     e
                 })?;
 
+                // Check if the card contains an AUTH key
+                // (using the fingerprint field as an indicator)
+                if tx
+                    .application_related_data()?
+                    .fingerprints()?
+                    .authentication()
+                    .is_none()
+                {
+                    // Card contains no AUTH key -> error out!
+                    notify_and_log(&format!(
+                        "The card {} doesn't seem to contain an authentication key",
+                        ident
+                    ));
+
+                    return Ok(Message::Failure);
+                }
+
                 // Check if the card agrees with this User PIN
-                open.verify_pw1_user(pin.as_bytes()).map_err(|e| {
+                tx.verify_pw1_user(pin.as_bytes()).map_err(|e| {
                     notify_and_log(&format!(
                         "User PIN verification failed on card {}: {}",
                         ident, e
