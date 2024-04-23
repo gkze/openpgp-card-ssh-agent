@@ -87,7 +87,7 @@ impl Session for Backend {
                 })?;
 
                 // The card liked this User PIN, we persist it via openpgp_card_state
-                openpgp_card_state::set_pin(&ident, &pin).map_err(|e| {
+                openpgp_card_state::set_pin(&ident, &pin, None).map_err(|e| {
                     notify_and_log(&format!("Error while storing User PIN: {}", e));
                     e
                 })?;
