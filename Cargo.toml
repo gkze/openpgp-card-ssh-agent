@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: 2021-2022 Wiktor Kwapisiewicz <wiktor@metacode.biz>
-# SPDX-FileCopyrightText: 2022-2023 Heiko Schaefer <heiko@schaefer.name>
+# SPDX-FileCopyrightText: 2022-2024 Heiko Schaefer <heiko@schaefer.name>
 # SPDX-License-Identifier: CC0-1.0
 
 [package]
 name = "openpgp-card-ssh-agent"
 description = "A simple ssh-agent backed by OpenPGP card authentication keys"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Wiktor Kwapisiewicz <wiktor@metacode.biz>", "Heiko Schaefer <heiko@schaefer.name>"]
 license = "MIT OR Apache-2.0"
 edition = "2021"
