@@ -11,7 +11,7 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 This is a simple SSH agent that uses keys on OpenPGP cards. Cards are accessed via PC/SC (e.g. via `pcscd`).
 
-The agent currently supports RSA 2048/4096, NIST P-256/384/521 and Curve 25519 keys.
+The agent currently supports RSA 2048/3072/4096, NIST P-256/384/521 and Curve 25519 keys.
 
 This agent relies on [openpgp-card-state](https://crates.io/crates/openpgp-card-state) for OpenPGP card User PIN
 handling.
@@ -149,5 +149,6 @@ To build without the notification mechanism (not recommended), you can use the `
 
 # Credit
 
-This project is based *very* heavily on work by [Wiktor Kwapisiewicz](https://metacode.biz/@wiktor). Much of the heavy ssh lifting
+This project is based *very* heavily on work by [Wiktor Kwapisiewicz](https://metacode.biz/@wiktor). Much of the heavy
+ssh lifting
 is happening in [ssh-agent-lib](https://crates.io/crates/ssh-agent-lib).
