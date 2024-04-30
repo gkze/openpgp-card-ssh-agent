@@ -46,6 +46,12 @@ steps:
       - expect tests/ssh-add.exp 0000:00000000
       - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
 
+      # Test ssh login with rsa3072 key
+      - /bin/bash -c 'opgpcard admin --card 0000:00000000 -P /dev/fd/3 generate -p /dev/fd/4 --output /dev/null rsa3072 3<<<12345678 4<<<123456'
+      - opgpcard ssh --key-only > /home/testuser/.ssh/authorized_keys
+      - expect tests/ssh-add.exp 0000:00000000
+      - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
+
       # Test ssh login with rsa4096 key
       - /bin/bash -c 'opgpcard admin --card 0000:00000000 -P /dev/fd/3 generate -p /dev/fd/4 --output /dev/null rsa4096 3<<<12345678 4<<<123456'
       - opgpcard ssh --key-only > /home/testuser/.ssh/authorized_keys
@@ -107,6 +113,12 @@ steps:
 
       # Test ssh login with rsa2048 key
       - /bin/bash -c 'opgpcard admin --card AFAF:00001234 -P /dev/fd/3 generate -p /dev/fd/4 --output /dev/null rsa2048 3<<<12345678 4<<<123456'
+      - opgpcard ssh --key-only > /home/testuser/.ssh/authorized_keys
+      - expect tests/ssh-add.exp AFAF:00001234
+      - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
+
+      # Test ssh login with rsa3072 key
+      - /bin/bash -c 'opgpcard admin --card AFAF:00001234 -P /dev/fd/3 generate -p /dev/fd/4 --output /dev/null rsa3072 3<<<12345678 4<<<123456'
       - opgpcard ssh --key-only > /home/testuser/.ssh/authorized_keys
       - expect tests/ssh-add.exp AFAF:00001234
       - ssh -o "StrictHostKeyChecking=no" testuser@localhost id
