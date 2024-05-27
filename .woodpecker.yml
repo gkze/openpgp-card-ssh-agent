@@ -21,6 +21,8 @@ steps:
   test-opcard-virtual:
     image: registry.gitlab.com/openpgp-card/virtual-cards/opcard-rs-tools
     pull: true
+    environment:
+      RUST_LOG: debug
     commands:
       - apt update -y -qq && DEBIAN_FRONTEND=noninteractive apt install -y -qq dropbear expect libdbus-1-dev
       # Start pcscd, virtual OpenPGP card
@@ -50,6 +52,9 @@ steps:
   test-smartpgp-virtual:
     image: registry.gitlab.com/openpgp-card/virtual-cards/smartpgp-tools
     pull: true
+    environment:
+      RUST_LOG: debug
+      RUST_BACKTRACE: 1
     commands:
       - . "$HOME/.cargo/env"
       - apt update -y -qq && DEBIAN_FRONTEND=noninteractive apt install -y -qq dropbear expect openssh-client libdbus-1-dev
