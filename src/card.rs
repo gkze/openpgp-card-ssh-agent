@@ -4,7 +4,6 @@
 use card_backend_pcsc::PcscBackend;
 use openpgp_card::crypto_data::PublicKeyMaterial;
 use openpgp_card::{Card, KeyType};
-use openssh_keys::{Data, PublicKey};
 use ssh_agent_lib::proto::Identity;
 
 use crate::ssh::get_ssh_pubkey;
@@ -22,7 +21,7 @@ pub(crate) fn list_ssh_identities() -> Result<Vec<Identity>, Box<dyn std::error:
         if let Ok(pubkey) = tx.public_key(KeyType::Authentication) {
             if let Ok(ssh) = get_ssh_pubkey(&pubkey) {
                 let id = Identity {
-                    pubkey_blob: ssh.data(),
+                    pubkey: ssh,
                     comment: tx
                         .application_identifier()
                         .map(|aid| aid.ident())
@@ -37,22 +36,11 @@ pub(crate) fn list_ssh_identities() -> Result<Vec<Identity>, Box<dyn std::error:
     Ok(ids)
 }
 
-// hack: normalize key material in ssh format to pass comparisons
-fn normalize(public_key: &mut PublicKey) {
-    if let Data::Rsa {
-        ref mut exponent, ..
-    } = &mut public_key.data
-    {
-        // Zeitcontrol 2.1 adds a leading 0x00 to `e`
-        while exponent.first() == Some(&0) {
-            exponent.remove(0);
-        }
-    }
-}
-
 // FIXME: replace with a filter function, so main can directly iterate over cards.
 // Main shouldn't need to re-open a transaction.
-pub(crate) fn card_by_ssh_blob(blob: &[u8]) -> Option<(Card, PublicKeyMaterial)> {
+pub(crate) fn card_by_ssh_blob(
+    blob: &ssh_key::public::KeyData,
+) -> Option<(Card, PublicKeyMaterial)> {
     let Ok(backends) = PcscBackend::cards(None) else {
         return None;
     };
@@ -65,16 +53,14 @@ pub(crate) fn card_by_ssh_blob(blob: &[u8]) -> Option<(Card, PublicKeyMaterial)>
             {
                 if let Ok(mut tx) = card.transaction() {
                     if let Ok(pubkey) = tx.public_key(KeyType::Authentication) {
-                        if let Ok(mut ssh) = get_ssh_pubkey(&pubkey) {
-                            normalize(&mut ssh); // normalize Mpi formats we got from the card
-
+                        if let Ok(ssh) = get_ssh_pubkey(&pubkey) {
                             log::debug!(
                                 "card_by_ssh_blob: requested blob {:02x?}, found on card {:02x?}",
                                 blob,
-                                &ssh.data()
+                                &ssh
                             );
 
-                            if ssh.data() == blob {
+                            if &ssh == blob {
                                 pkm = Some(pubkey);
                             }
                         }

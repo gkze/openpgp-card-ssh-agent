@@ -5,16 +5,22 @@
 use openpgp_card::algorithm::{AlgorithmAttributes, Curve};
 use openpgp_card::crypto_data::{EccType, PublicKeyMaterial};
 use ssh_agent_lib::proto::SignRequest;
+use ssh_key::public::EcdsaPublicKey;
+use ssh_key::public::Ed25519PublicKey;
+use ssh_key::public::KeyData;
+use ssh_key::public::RsaPublicKey;
+use ssh_key::sec1::EncodedPoint;
+use ssh_key::Mpint;
 
 pub(crate) fn get_ssh_pubkey(
     pkm: &PublicKeyMaterial,
-) -> Result<openssh_keys::PublicKey, Box<dyn std::error::Error>> {
+) -> Result<KeyData, Box<dyn std::error::Error>> {
     match pkm {
         PublicKeyMaterial::R(rsa) => {
-            let e = rsa.v().to_vec();
-            let n = rsa.n().to_vec();
+            let e = Mpint::from_positive_bytes(rsa.v())?;
+            let n = Mpint::from_positive_bytes(rsa.n())?;
 
-            Ok(openssh_keys::PublicKey::from_rsa(e, n))
+            Ok(KeyData::Rsa(RsaPublicKey { e, n }))
         }
         PublicKeyMaterial::E(ecc) => {
             if let AlgorithmAttributes::Ecc(ecc_attrs) = ecc.algo() {
@@ -22,18 +28,22 @@ pub(crate) fn get_ssh_pubkey(
                     EccType::EdDSA => {
                         let key = ecc.data().to_vec();
 
-                        Ok(openssh_keys::PublicKey {
-                            data: openssh_keys::Data::Ed25519 { key },
-                            comment: None,
-                            options: None,
-                        })
+                        Ok(KeyData::Ed25519(Ed25519PublicKey(
+                            key.try_into().map_err(|_e| anyhow::anyhow!("bad length"))?,
+                        )))
                     }
                     EccType::ECDSA => {
                         if let AlgorithmAttributes::Ecc(ecc_attrs) = ecc.algo() {
-                            let curve = match ecc_attrs.curve() {
-                                Curve::NistP256r1 => openssh_keys::Curve::Nistp256,
-                                Curve::NistP384r1 => openssh_keys::Curve::Nistp384,
-                                Curve::NistP521r1 => openssh_keys::Curve::Nistp521,
+                            Ok(KeyData::Ecdsa(match ecc_attrs.curve() {
+                                Curve::NistP256r1 => {
+                                    EcdsaPublicKey::NistP256(EncodedPoint::from_bytes(ecc.data())?)
+                                }
+                                Curve::NistP384r1 => {
+                                    EcdsaPublicKey::NistP384(EncodedPoint::from_bytes(ecc.data())?)
+                                }
+                                Curve::NistP521r1 => {
+                                    EcdsaPublicKey::NistP521(EncodedPoint::from_bytes(ecc.data())?)
+                                }
                                 _ => {
                                     return Err(anyhow::anyhow!(
                                         "Unsupported ECDSA curve {:?}",
@@ -41,15 +51,7 @@ pub(crate) fn get_ssh_pubkey(
                                     )
                                     .into())
                                 }
-                            };
-
-                            let key = ecc.data().to_vec();
-
-                            Ok(openssh_keys::PublicKey {
-                                data: openssh_keys::Data::Ecdsa { curve, key },
-                                comment: None,
-                                options: None,
-                            })
+                            }))
                         } else {
                             Err(anyhow::anyhow!("Unexpected ecc.algo {:?}", ecc.algo()).into())
                         }
@@ -69,7 +71,7 @@ pub(crate) fn get_ssh_pubkey(
 pub(crate) fn signature_request_information(
     request: &SignRequest,
     pkm: &PublicKeyMaterial,
-) -> Option<(&'static str, Vec<u8>)> {
+) -> Option<(ssh_key::Algorithm, Vec<u8>)> {
     use sha2::Digest;
 
     // Signature scheme "rsa-sha2-256" or "rsa-sha2-512" [I-D.ietf-curdle-rsa-sha2]
@@ -81,11 +83,21 @@ pub(crate) fn signature_request_information(
             if request.flags & SSH_AGENT_RSA_SHA2_256 != 0 {
                 let mut hasher = sha2::Sha256::new();
                 hasher.update(&request.data);
-                Some(("rsa-sha2-256", hasher.finalize().to_vec()))
+                Some((
+                    ssh_key::Algorithm::Rsa {
+                        hash: Some(ssh_key::HashAlg::Sha256),
+                    },
+                    hasher.finalize().to_vec(),
+                ))
             } else if request.flags & SSH_AGENT_RSA_SHA2_512 != 0 {
                 let mut hasher = sha2::Sha512::new();
                 hasher.update(&request.data);
-                Some(("rsa-sha2-512", hasher.finalize().to_vec()))
+                Some((
+                    ssh_key::Algorithm::Rsa {
+                        hash: Some(ssh_key::HashAlg::Sha512),
+                    },
+                    hasher.finalize().to_vec(),
+                ))
             } else {
                 log::error!("Unexpected RSA case");
                 return None;
@@ -107,21 +119,36 @@ pub(crate) fn signature_request_information(
                                 hasher.update(&request.data);
                                 let digest = hasher.finalize().to_vec();
 
-                                Some(("ecdsa-sha2-nistp256", digest))
+                                Some((
+                                    ssh_key::Algorithm::Ecdsa {
+                                        curve: ssh_key::EcdsaCurve::NistP256,
+                                    },
+                                    digest,
+                                ))
                             }
                             Curve::NistP384r1 => {
                                 let mut hasher = sha2::Sha384::new();
                                 hasher.update(&request.data);
                                 let digest = hasher.finalize().to_vec();
 
-                                Some(("ecdsa-sha2-nistp384", digest))
+                                Some((
+                                    ssh_key::Algorithm::Ecdsa {
+                                        curve: ssh_key::EcdsaCurve::NistP384,
+                                    },
+                                    digest,
+                                ))
                             }
                             Curve::NistP521r1 => {
                                 let mut hasher = sha2::Sha512::new();
                                 hasher.update(&request.data);
                                 let digest = hasher.finalize().to_vec();
 
-                                Some(("ecdsa-sha2-nistp521", digest))
+                                Some((
+                                    ssh_key::Algorithm::Ecdsa {
+                                        curve: ssh_key::EcdsaCurve::NistP521,
+                                    },
+                                    digest,
+                                ))
                             }
                             _ => {
                                 log::error!("Unexpected ECDSA curve {:?}", curve);
@@ -134,7 +161,7 @@ pub(crate) fn signature_request_information(
                         assert_eq!(curve, &Curve::Ed25519);
 
                         // raw message to be hashed and signed, ed25519
-                        Some(("ssh-ed25519", request.data.clone()))
+                        Some((ssh_key::Algorithm::Ed25519, request.data.clone()))
                     }
                     e => {
                         log::error!("Unexpected EccType {:?}", e);
