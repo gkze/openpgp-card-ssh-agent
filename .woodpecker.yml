@@ -42,7 +42,7 @@ steps:
       - export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/ocsa.sock
       - sleep 10
 
-      # Test ssh logins with different key types
+      - echo 'Test ssh logins with different key types'
       - /bin/bash -c 'tests/gen-login.sh 0000:00000000 cv25519'
       - /bin/bash -c 'tests/gen-login.sh 0000:00000000 rsa2048'
       - /bin/bash -c 'tests/gen-login.sh 0000:00000000 rsa3072'
@@ -75,7 +75,7 @@ steps:
       - export SSH_AUTH_SOCK=$XDG_RUNTIME_DIR/ocsa.sock
       - sleep 10
 
-      # Test ssh logins with different key types
+      - echo 'Test ssh logins with different key types'
       - /bin/bash -c 'tests/gen-login.sh AFAF:00001234 nistp256'
       - /bin/bash -c 'tests/gen-login.sh AFAF:00001234 nistp384'
       - /bin/bash -c 'tests/gen-login.sh AFAF:00001234 nistp521'
