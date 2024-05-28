@@ -18,6 +18,12 @@ steps:
       - apt update -y -qq && apt install -y -qq --no-install-recommends clang pkg-config libpcsclite-dev libdbus-1-dev
       - cargo clippy --no-deps
 
+  unit-tests:
+    image: rust
+    commands:
+      - apt update -y -qq && apt install -y -qq --no-install-recommends clang pkg-config libpcsclite-dev libdbus-1-dev
+      - cargo test --all
+
   test-opcard-virtual:
     image: registry.gitlab.com/openpgp-card/virtual-cards/opcard-rs-tools
     pull: true
