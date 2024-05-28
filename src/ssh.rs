@@ -152,3 +152,28 @@ pub(crate) fn signature_request_information(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_v_leading_zero_not_influencing_key_equality() {
+        let v = [1, 0, 1];
+        let n = [1, 2, 3, 4];
+        let e = Mpint::from_positive_bytes(&v).expect("v");
+        let n = Mpint::from_positive_bytes(&n).expect("n");
+
+        let first_key = KeyData::Rsa(RsaPublicKey { e, n });
+
+        // additional zero in "v"/"e" should not affect the result
+        let v = [0, 1, 0, 1];
+        let n = [1, 2, 3, 4];
+        let e = Mpint::from_positive_bytes(&v).expect("v");
+        let n = Mpint::from_positive_bytes(&n).expect("n");
+
+        let second_key = KeyData::Rsa(RsaPublicKey { e, n });
+
+        assert_eq!(first_key, second_key);
+    }
+}
