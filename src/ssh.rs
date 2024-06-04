@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: 2022-2024 Heiko Schaefer <heiko@schaefer.name>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use openpgp_card::algorithm::{AlgorithmAttributes, Curve};
-use openpgp_card::crypto_data::{EccType, PublicKeyMaterial};
+use openpgp_card::ocard::algorithm::{AlgorithmAttributes, Curve};
+use openpgp_card::ocard::crypto::{EccType, PublicKeyMaterial};
 use ssh_agent_lib::proto::SignRequest;
 use ssh_key::public::EcdsaPublicKey;
 use ssh_key::public::Ed25519PublicKey;
@@ -64,7 +64,6 @@ pub(crate) fn get_ssh_pubkey(
                 Err(anyhow::anyhow!("Unexpected Algo in EccPub {:?}", ecc).into())
             }
         }
-        _ => Err(anyhow::anyhow!("Unexpected PublicKeyMaterial type {:?}", pkm).into()),
     }
 }
 
@@ -172,10 +171,6 @@ pub(crate) fn signature_request_information(
                 log::error!("Unexpected ECC case");
                 None
             }
-        }
-        _ => {
-            log::error!("Unexpected PublicKeyMaterial case");
-            None
         }
     }
 }

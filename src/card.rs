@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use card_backend_pcsc::PcscBackend;
-use openpgp_card::crypto_data::PublicKeyMaterial;
-use openpgp_card::{Card, KeyType};
+use openpgp_card::ocard::crypto::PublicKeyMaterial;
+use openpgp_card::ocard::{KeyType, OpenPGP};
 use ssh_agent_lib::proto::Identity;
 
 use crate::ssh::get_ssh_pubkey;
@@ -15,7 +15,7 @@ pub(crate) fn list_ssh_identities() -> Result<Vec<Identity>, Box<dyn std::error:
     let mut ids = vec![];
 
     for b in backends.filter_map(|c| c.ok()) {
-        let mut card = Card::new(b)?;
+        let mut card = OpenPGP::new(b)?;
         let mut tx = card.transaction()?;
 
         if let Ok(pubkey) = tx.public_key(KeyType::Authentication) {
@@ -40,13 +40,13 @@ pub(crate) fn list_ssh_identities() -> Result<Vec<Identity>, Box<dyn std::error:
 // Main shouldn't need to re-open a transaction.
 pub(crate) fn card_by_ssh_blob(
     blob: &ssh_key::public::KeyData,
-) -> Option<(Card, PublicKeyMaterial)> {
+) -> Option<(OpenPGP, PublicKeyMaterial)> {
     let Ok(backends) = PcscBackend::cards(None) else {
         return None;
     };
 
     for b in backends.filter_map(|c| c.ok()) {
-        if let Ok(mut card) = Card::new(b) {
+        if let Ok(mut card) = OpenPGP::new(b) {
             // signals that this is the right card
             let mut pkm = None;
 
@@ -79,11 +79,11 @@ pub(crate) fn card_by_ssh_blob(
 
 // FIXME: replace with a filter function, so main can directly iterate over cards.
 // Main shouldn't need to re-open a transaction.
-pub(crate) fn card_by_ident(ident: &str) -> Result<Card, openpgp_card::Error> {
+pub(crate) fn card_by_ident(ident: &str) -> Result<OpenPGP, openpgp_card::Error> {
     let backends = PcscBackend::cards(None)?;
 
     for b in backends.filter_map(|c| c.ok()) {
-        let mut card = Card::new(b)?;
+        let mut card = OpenPGP::new(b)?;
 
         let aid = {
             let mut tx = card.transaction()?;

@@ -6,7 +6,7 @@ mod card;
 mod ssh;
 
 use clap::Parser;
-use openpgp_card::crypto_data::Hash;
+use openpgp_card::ocard::crypto::Hash;
 use secrecy::ExposeSecret as _;
 use sha2::digest::generic_array::GenericArray;
 use ssh_agent_lib::agent::service_binding::Binding;
@@ -75,7 +75,7 @@ impl Session for Backend {
                 match openpgp_card_state::get_pin(&ident) {
                     Ok(Some(pin)) => {
                         // Our PIN backend has a User PIN for this ident
-                        if tx.verify_pw1_user(pin.as_bytes()).is_err() {
+                        if tx.verify_pw1_user(pin.as_bytes().to_vec().into()).is_err() {
                             // .. but verification against the card failed. Bad PIN?
 
                             // We drop the PIN from the state backend, to avoid exhausting
@@ -266,7 +266,7 @@ impl Session for Backend {
         }
 
         // Check if the card agrees with this User PIN
-        tx.verify_pw1_user(pin.expose_secret().as_bytes())
+        tx.verify_pw1_user(pin.expose_secret().as_bytes().to_vec().into())
             .map_err(|e| {
                 notify_and_log(&format!(
                     "User PIN verification failed on card {}: {}",
