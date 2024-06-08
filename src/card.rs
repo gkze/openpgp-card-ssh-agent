@@ -3,7 +3,7 @@
 
 use card_backend_pcsc::PcscBackend;
 use openpgp_card::ocard::crypto::PublicKeyMaterial;
-use openpgp_card::ocard::{KeyType, OpenPGP};
+use openpgp_card::ocard::{KeyType, OpenPGP, Transaction};
 use ssh_agent_lib::proto::Identity;
 
 use crate::ssh::get_ssh_pubkey;
@@ -36,40 +36,21 @@ pub(crate) fn list_ssh_identities() -> Result<Vec<Identity>, Box<dyn std::error:
     Ok(ids)
 }
 
-// FIXME: replace with a filter function, so main can directly iterate over cards.
-// Main shouldn't need to re-open a transaction.
-pub(crate) fn card_by_ssh_blob(
+// Return the AUT `PublicKeyMaterial` of the card `tx` if the key material matches with `blob`
+pub(crate) fn match_ssh_blob(
+    tx: &mut Transaction,
     blob: &ssh_key::public::KeyData,
-) -> Option<(OpenPGP, PublicKeyMaterial)> {
-    let Ok(backends) = PcscBackend::cards(None) else {
-        return None;
-    };
+) -> Option<PublicKeyMaterial> {
+    if let Ok(pkm) = tx.public_key(KeyType::Authentication) {
+        if let Ok(ssh) = get_ssh_pubkey(&pkm) {
+            log::debug!(
+                "match_ssh_blob: searching blob {:02x?}, found on card {:02x?}",
+                blob,
+                &ssh
+            );
 
-    for b in backends.filter_map(|c| c.ok()) {
-        if let Ok(mut card) = OpenPGP::new(b) {
-            // signals that this is the right card
-            let mut pkm = None;
-
-            {
-                if let Ok(mut tx) = card.transaction() {
-                    if let Ok(pubkey) = tx.public_key(KeyType::Authentication) {
-                        if let Ok(ssh) = get_ssh_pubkey(&pubkey) {
-                            log::debug!(
-                                "card_by_ssh_blob: requested blob {:02x?}, found on card {:02x?}",
-                                blob,
-                                &ssh
-                            );
-
-                            if &ssh == blob {
-                                pkm = Some(pubkey);
-                            }
-                        }
-                    }
-                }
-            }
-
-            if let Some(pkm) = pkm {
-                return Some((card, pkm));
+            if &ssh == blob {
+                return Some(pkm);
             }
         }
     }

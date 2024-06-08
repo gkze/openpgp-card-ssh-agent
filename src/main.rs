@@ -5,8 +5,10 @@
 mod card;
 mod ssh;
 
+use card_backend_pcsc::PcscBackend;
 use clap::Parser;
-use openpgp_card::ocard::crypto::Hash;
+use openpgp_card::ocard::crypto::{Hash, PublicKeyMaterial};
+use openpgp_card::ocard::{OpenPGP, Transaction};
 use secrecy::ExposeSecret as _;
 use sha2::digest::generic_array::GenericArray;
 use ssh_agent_lib::agent::service_binding::Binding;
@@ -38,6 +40,167 @@ fn notify_and_log(msg: &str) {
     notify(msg);
 }
 
+fn do_sign(
+    tx: &mut Transaction,
+    request: &SignRequest,
+    pkm: PublicKeyMaterial,
+) -> Result<Signature, AgentError> {
+    let ard = tx.application_related_data().map_err(|e| {
+        log::debug!("failed to get application_related_data: {}", e);
+        AgentError::other(e)
+    })?;
+    let ident = ard
+        .application_id()
+        .map_err(|e| {
+            log::debug!("failed to get application_id: {}", e);
+            AgentError::other(e)
+        })?
+        .ident();
+
+    log::debug!("Using card {:?}", ident);
+
+    if let Some((sig_scheme, digest)) = ssh::signature_request_information(request, &pkm) {
+        // Get User PIN from the state backend and present it to the card
+        match openpgp_card_state::get_pin(&ident) {
+            Ok(Some(pin)) => {
+                // Our PIN backend has a User PIN for this ident
+                if tx.verify_pw1_user(pin.as_bytes().to_vec().into()).is_err() {
+                    // .. but verification against the card failed. Bad PIN?
+
+                    // We drop the PIN from the state backend, to avoid exhausting
+                    // the retry counter and locking up the User PIN.
+                    let res = openpgp_card_state::drop_pin(&ident);
+
+                    if res.is_ok() {
+                        notify_and_log(&format!(
+                                        "ERROR: The stored User PIN for OpenPGP card '{}' seems wrong or blocked! Dropped it from storage.",
+                                        &ident));
+                    } else {
+                        notify_and_log(&format!(
+                                        "ERROR: The stored User PIN for OpenPGP card '{}' seems wrong or blocked! In addition, dropping it from storage failed.",
+                                        &ident));
+                    }
+
+                    return Err(AgentError::Failure);
+                }
+            }
+            _ => {
+                // FIXME: distinguish missing vs. error, later
+
+                log::error!(
+                    "No User PIN for card {} found via openpgp_card_state",
+                    ident
+                );
+
+                notify(&format!(
+                                "No User PIN available for this OpenPGP card. You can store a PIN by running 'ssh-add -s {}'",
+                                &ident));
+
+                return Err(AgentError::Failure);
+            }
+        }
+
+        // Notification function
+        let touch_prompt = || {
+            notify(&format!(
+                "Touch confirmation needed for ssh auth on card {}",
+                &ident
+            ));
+
+            #[cfg(not(feature = "notify"))]
+            println!("Touch confirmation needed for ssh auth on card {}", &ident);
+        };
+
+        // Determine UIF setting for the auth slot
+        if let Ok(Some(uif)) = ard.uif_pso_aut() {
+            // Touch is required if:
+            // - the card supports the feature
+            // - and the policy requires touch
+            if uif.touch_policy().touch_required() {
+                touch_prompt();
+            }
+        };
+
+        // Perform signing operation on the card, and process signature
+        if let Ok(signature) = match sig_scheme {
+            Algorithm::Rsa {
+                hash: Some(HashAlg::Sha256),
+            } => tx.authenticate_for_hash(Hash::SHA256(digest.try_into().map_err(|e| {
+                log::debug!("failed to map rsa-sha2-256 digest: {:02x?}", e);
+                std::io::Error::other("convert")
+            })?)),
+            Algorithm::Rsa {
+                hash: Some(HashAlg::Sha512),
+            } => tx.authenticate_for_hash(Hash::SHA512(digest.try_into().map_err(|e| {
+                log::debug!("failed to map rsa-sha2-512 digest: {:02x?}", e);
+                std::io::Error::other("convert")
+            })?)),
+            _ => tx.internal_authenticate(digest),
+        } {
+            log::debug!("sig from card: ({}) {:02x?}", signature.len(), signature);
+
+            let data = match sig_scheme {
+                Algorithm::Rsa { .. } => signature,
+                Algorithm::Ed25519 => signature,
+                Algorithm::Ecdsa { curve } => {
+                    let len = signature.len();
+
+                    let field_size = match curve {
+                        EcdsaCurve::NistP256 => 32,
+                        EcdsaCurve::NistP384 => 48,
+                        EcdsaCurve::NistP521 => 66,
+                    };
+
+                    let r = &signature[0..len / 2];
+                    let r = &r[r.len() - field_size..];
+                    let s = &signature[len / 2..];
+                    let s = &s[s.len() - field_size..];
+
+                    return Ok(match curve {
+                        EcdsaCurve::NistP256 => p256::ecdsa::Signature::from_scalars(
+                            GenericArray::clone_from_slice(r),
+                            GenericArray::clone_from_slice(s),
+                        )
+                        .map_err(AgentError::other)?
+                        .try_into()
+                        .map_err(AgentError::other)?,
+                        EcdsaCurve::NistP384 => p384::ecdsa::Signature::from_scalars(
+                            GenericArray::clone_from_slice(r),
+                            GenericArray::clone_from_slice(s),
+                        )
+                        .map_err(AgentError::other)?
+                        .try_into()
+                        .map_err(AgentError::other)?,
+                        EcdsaCurve::NistP521 => p521::ecdsa::Signature::from_scalars(
+                            GenericArray::clone_from_slice(r),
+                            GenericArray::clone_from_slice(s),
+                        )
+                        .map_err(AgentError::other)?
+                        .try_into()
+                        .map_err(AgentError::other)?,
+                    });
+                }
+                _ => {
+                    log::error!("Unexpected sig_scheme {sig_scheme}");
+                    return Err(AgentError::Failure);
+                }
+            };
+
+            let s = Signature::new(sig_scheme, data).map_err(AgentError::other)?;
+
+            log::trace!("ssh signature: {:?}", s);
+
+            Ok(s)
+        } else {
+            log::debug!("Sign operation failed");
+
+            Err(AgentError::Failure)
+        }
+    } else {
+        Err(AgentError::Failure)
+    }
+}
+
 #[ssh_agent_lib::async_trait]
 impl Session for Backend {
     /// Perform a private key signature operation.
@@ -47,177 +210,25 @@ impl Session for Backend {
 
         log::debug!("-> SignRequest {:x?}", request);
 
-        // get card for this pubkey blob
-        let res = card::card_by_ssh_blob(&request.pubkey);
+        let Ok(backends) = PcscBackend::cards(None) else {
+            log::debug!("Can't find any cards");
+            return Err(AgentError::Failure);
+        };
 
-        if let Some((mut card, pkm)) = res {
-            let mut tx = card.transaction().map_err(|e| {
-                log::debug!("failed to re-start transaction: {}", e);
-                AgentError::other(e)
-            })?;
-
-            let ard = tx.application_related_data().map_err(|e| {
-                log::debug!("failed to get application_related_data: {}", e);
-                AgentError::other(e)
-            })?;
-            let ident = ard
-                .application_id()
-                .map_err(|e| {
-                    log::debug!("failed to get application_id: {}", e);
-                    AgentError::other(e)
-                })?
-                .ident();
-
-            log::debug!("Using card {:?}", ident);
-
-            if let Some((sig_scheme, digest)) = ssh::signature_request_information(&request, &pkm) {
-                // Get User PIN from the state backend and present it to the card
-                match openpgp_card_state::get_pin(&ident) {
-                    Ok(Some(pin)) => {
-                        // Our PIN backend has a User PIN for this ident
-                        if tx.verify_pw1_user(pin.as_bytes().to_vec().into()).is_err() {
-                            // .. but verification against the card failed. Bad PIN?
-
-                            // We drop the PIN from the state backend, to avoid exhausting
-                            // the retry counter and locking up the User PIN.
-                            let res = openpgp_card_state::drop_pin(&ident);
-
-                            if res.is_ok() {
-                                notify_and_log(&format!(
-                                            "ERROR: The stored User PIN for OpenPGP card '{}' seems wrong or blocked! Dropped it from storage.",
-                                            &ident));
-                            } else {
-                                notify_and_log(&format!(
-                                            "ERROR: The stored User PIN for OpenPGP card '{}' seems wrong or blocked! In addition, dropping it from storage failed.",
-                                            &ident));
-                            }
-
-                            return Err(AgentError::Failure);
-                        }
-                    }
-                    _ => {
-                        // FIXME: distinguish missing vs. error, later
-
-                        log::error!(
-                            "No User PIN for card {} found via openpgp_card_state",
-                            ident
-                        );
-
-                        notify(&format!(
-                                    "No User PIN available for this OpenPGP card. You can store a PIN by running 'ssh-add -s {}'",
-                                    &ident));
-
-                        return Err(AgentError::Failure);
+        for b in backends.filter_map(|b| b.ok()) {
+            if let Ok(mut card) = OpenPGP::new(b) {
+                if let Ok(mut tx) = card.transaction() {
+                    if let Some(pkm) = card::match_ssh_blob(&mut tx, &request.pubkey) {
+                        // This card has the key material that we want to sign with,
+                        // so we try signing the request with it.
+                        return do_sign(&mut tx, &request, pkm);
                     }
                 }
-
-                // Notification function
-                let touch_prompt = || {
-                    notify(&format!(
-                        "Touch confirmation needed for ssh auth on card {}",
-                        &ident
-                    ));
-
-                    #[cfg(not(feature = "notify"))]
-                    println!("Touch confirmation needed for ssh auth on card {}", &ident);
-                };
-
-                // Determine UIF setting for the auth slot
-                if let Ok(Some(uif)) = ard.uif_pso_aut() {
-                    // Touch is required if:
-                    // - the card supports the feature
-                    // - and the policy requires touch
-                    if uif.touch_policy().touch_required() {
-                        touch_prompt();
-                    }
-                };
-
-                // Perform signing operation on the card, and process signature
-                if let Ok(signature) = match sig_scheme {
-                    Algorithm::Rsa {
-                        hash: Some(HashAlg::Sha256),
-                    } => {
-                        tx.authenticate_for_hash(Hash::SHA256(digest.try_into().map_err(|e| {
-                            log::debug!("failed to map rsa-sha2-256 digest: {:02x?}", e);
-                            std::io::Error::other("convert")
-                        })?))
-                    }
-                    Algorithm::Rsa {
-                        hash: Some(HashAlg::Sha512),
-                    } => {
-                        tx.authenticate_for_hash(Hash::SHA512(digest.try_into().map_err(|e| {
-                            log::debug!("failed to map rsa-sha2-512 digest: {:02x?}", e);
-                            std::io::Error::other("convert")
-                        })?))
-                    }
-                    _ => tx.internal_authenticate(digest),
-                } {
-                    log::debug!("sig from card: ({}) {:02x?}", signature.len(), signature);
-
-                    let data = match sig_scheme {
-                        Algorithm::Rsa { .. } => signature,
-                        Algorithm::Ed25519 => signature,
-                        Algorithm::Ecdsa { curve } => {
-                            let len = signature.len();
-
-                            let field_size = match curve {
-                                EcdsaCurve::NistP256 => 32,
-                                EcdsaCurve::NistP384 => 48,
-                                EcdsaCurve::NistP521 => 66,
-                            };
-
-                            let r = &signature[0..len / 2];
-                            let r = &r[r.len() - field_size..];
-                            let s = &signature[len / 2..];
-                            let s = &s[s.len() - field_size..];
-
-                            return Ok(match curve {
-                                EcdsaCurve::NistP256 => p256::ecdsa::Signature::from_scalars(
-                                    GenericArray::clone_from_slice(r),
-                                    GenericArray::clone_from_slice(s),
-                                )
-                                .map_err(AgentError::other)?
-                                .try_into()
-                                .map_err(AgentError::other)?,
-                                EcdsaCurve::NistP384 => p384::ecdsa::Signature::from_scalars(
-                                    GenericArray::clone_from_slice(r),
-                                    GenericArray::clone_from_slice(s),
-                                )
-                                .map_err(AgentError::other)?
-                                .try_into()
-                                .map_err(AgentError::other)?,
-                                EcdsaCurve::NistP521 => p521::ecdsa::Signature::from_scalars(
-                                    GenericArray::clone_from_slice(r),
-                                    GenericArray::clone_from_slice(s),
-                                )
-                                .map_err(AgentError::other)?
-                                .try_into()
-                                .map_err(AgentError::other)?,
-                            });
-                        }
-                        _ => {
-                            log::error!("Unexpected sig_scheme {sig_scheme}");
-                            return Err(AgentError::Failure);
-                        }
-                    };
-
-                    let s = Signature::new(sig_scheme, data).map_err(AgentError::other)?;
-
-                    log::trace!("ssh signature: {:?}", s);
-
-                    Ok(s)
-                } else {
-                    log::debug!("Sign operation failed");
-
-                    Err(AgentError::Failure)
-                }
-            } else {
-                return Err(AgentError::Failure);
             }
-        } else {
-            log::debug!("Got a signing request for an identity we don't know about");
-            Err(AgentError::Failure)
         }
+
+        log::debug!("Got a signing request for an identity we don't know about");
+        Err(AgentError::Failure)
     }
 
     /// Add a key stored on a smartcard.
