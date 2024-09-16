@@ -15,14 +15,14 @@ steps:
     image: rust
     commands:
       - rustup component add clippy
-      - apt update -y -qq && apt install -y -qq --no-install-recommends clang pkg-config libpcsclite-dev
+      - apt update -y -qq && apt install -y -qq --no-install-recommends clang pkg-config libpcsclite-dev libdbus-1-dev
       - cargo clippy --no-deps
 
   test-opcard-virtual:
     image: registry.gitlab.com/openpgp-card/virtual-cards/opcard-rs-tools
     pull: true
     commands:
-      - apt update -y -qq && DEBIAN_FRONTEND=noninteractive apt install -y -qq dropbear expect
+      - apt update -y -qq && DEBIAN_FRONTEND=noninteractive apt install -y -qq dropbear expect libdbus-1-dev
       # Start pcscd, virtual OpenPGP card
       - sh /start.sh
       # Start dropbear ssh server (openssh-server seems hard to run in a container)
@@ -52,7 +52,7 @@ steps:
     pull: true
     commands:
       - . "$HOME/.cargo/env"
-      - apt update -y -qq && DEBIAN_FRONTEND=noninteractive apt install -y -qq dropbear expect openssh-client
+      - apt update -y -qq && DEBIAN_FRONTEND=noninteractive apt install -y -qq dropbear expect openssh-client libdbus-1-dev
       # Start pcscd, virtual OpenPGP card
       - sh /start.sh
       # Start dropbear ssh server (openssh-server seems hard to run in a container)
