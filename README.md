@@ -99,6 +99,10 @@ On Windows, use the following format to use a Named Pipe:
 $ openpgp-card-ssh-agent -H \\.\pipe\ocsa
 ```
 
+### Use with systemd
+
+Config files for using `openpgp-card-ssh-agent` with systemd are provided in the `contrib` directory.
+
 ## Use
 
 To use this ssh-agent, you need to set the `SSH_AUTH_SOCK` environment variable:
