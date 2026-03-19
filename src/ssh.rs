@@ -99,7 +99,7 @@ pub(crate) fn signature_request_information(
                 ))
             } else {
                 log::error!("Unexpected RSA case");
-                return None;
+                None
             }
         }
         PublicKeyMaterial::E(ecc) => {
