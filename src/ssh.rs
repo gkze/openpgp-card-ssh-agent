@@ -157,7 +157,10 @@ pub(crate) fn signature_request_information(
                     }
                     EccType::EdDSA => {
                         let curve = ea.curve();
-                        assert_eq!(curve, &Curve::Ed25519);
+                        if curve != &Curve::Ed25519 {
+                            log::error!("Unsupported EdDSA curve {:?}", curve);
+                            return None;
+                        }
 
                         // raw message to be hashed and signed, ed25519
                         Some((ssh_key::Algorithm::Ed25519, request.data.clone()))
