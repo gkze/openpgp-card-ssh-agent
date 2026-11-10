@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2022-2024 Heiko Schaefer <heiko@schaefer.name>
+// SPDX-FileCopyrightText: Heiko Schaefer <heiko.schaefer@posteo.de>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use card_backend_pcsc::PcscBackend;

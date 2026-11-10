@@ -1,6 +1,6 @@
 <!--
 SPDX-FileCopyrightText: 2021-2022 Wiktor Kwapisiewicz <wiktor@metacode.biz>
-SPDX-FileCopyrightText: 2022-2024 Heiko Schaefer <heiko@schaefer.name>
+SPDX-FileCopyrightText: Heiko Schaefer <heiko.schaefer@posteo.de>
 SPDX-License-Identifier: CC-BY-SA-4.0
 -->
 

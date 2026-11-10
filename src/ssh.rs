@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2021-2024 Wiktor Kwapisiewicz <wiktor@metacode.biz>
-// SPDX-FileCopyrightText: 2022-2024 Heiko Schaefer <heiko@schaefer.name>
+// SPDX-FileCopyrightText: Heiko Schaefer <heiko.schaefer@posteo.de>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use openpgp_card::ocard::{
