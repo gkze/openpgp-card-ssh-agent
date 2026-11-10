@@ -7,7 +7,7 @@ mod ssh;
 
 use card_backend_pcsc::PcscBackend;
 use clap::Parser;
-use openpgp_card::ocard::crypto::{Hash, PublicKeyMaterial};
+use openpgp_card::ocard::crypto::{HashAlgo, PublicKeyMaterial, SigningAlgo};
 use openpgp_card::ocard::{OpenPGP, Transaction};
 use secrecy::ExposeSecret as _;
 use sha2::digest::generic_array::GenericArray;
@@ -125,16 +125,10 @@ fn do_sign(
         if let Ok(signature) = match sig_scheme {
             Algorithm::Rsa {
                 hash: Some(HashAlg::Sha256),
-            } => tx.authenticate_for_hash(Hash::SHA256(digest.try_into().map_err(|e| {
-                log::debug!("failed to map rsa-sha2-256 digest: {:02x?}", e);
-                std::io::Error::other("convert")
-            })?)),
+            } => tx.authenticate_for_hash(SigningAlgo::RSA(HashAlgo::SHA256), &digest),
             Algorithm::Rsa {
                 hash: Some(HashAlg::Sha512),
-            } => tx.authenticate_for_hash(Hash::SHA512(digest.try_into().map_err(|e| {
-                log::debug!("failed to map rsa-sha2-512 digest: {:02x?}", e);
-                std::io::Error::other("convert")
-            })?)),
+            } => tx.authenticate_for_hash(SigningAlgo::RSA(HashAlgo::SHA512), &digest),
             _ => tx.internal_authenticate(digest),
         } {
             log::debug!("sig from card: ({}) {:02x?}", signature.len(), signature);
