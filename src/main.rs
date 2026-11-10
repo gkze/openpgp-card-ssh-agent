@@ -212,7 +212,8 @@ impl Session for Backend {
         for b in backends.filter_map(|b| b.ok()) {
             if let Ok(mut card) = OpenPGP::new(b) {
                 if let Ok(mut tx) = card.transaction() {
-                    if let Some(pkm) = card::match_ssh_blob(&mut tx, &request.pubkey) {
+                    if let Some(pkm) = card::match_ssh_blob(&mut tx, request.credential.key_data())
+                    {
                         // This card has the key material that we want to sign with,
                         // so we try signing the request with it.
                         return do_sign(&mut tx, &request, pkm);

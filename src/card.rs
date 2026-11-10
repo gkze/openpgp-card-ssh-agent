@@ -21,7 +21,7 @@ pub(crate) fn list_ssh_identities() -> Result<Vec<Identity>, Box<dyn std::error:
         if let Ok(pubkey) = tx.public_key(KeyType::Authentication) {
             if let Ok(ssh) = get_ssh_pubkey(&pubkey) {
                 let id = Identity {
-                    pubkey: ssh,
+                    credential: ssh.into(),
                     comment: tx
                         .application_identifier()
                         .map(|aid| aid.ident())
