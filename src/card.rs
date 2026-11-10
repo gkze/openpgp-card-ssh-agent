@@ -46,7 +46,7 @@ pub(crate) fn match_ssh_blob(
             log::debug!(
                 "match_ssh_blob: searching blob {:02x?}, found on card {:02x?}",
                 blob,
-                &ssh
+                ssh
             );
 
             if &ssh == blob {

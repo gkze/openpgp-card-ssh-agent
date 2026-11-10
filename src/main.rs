@@ -74,11 +74,11 @@ fn do_sign(
                     if res.is_ok() {
                         notify_and_log(&format!(
                                         "ERROR: The stored User PIN for OpenPGP card '{}' seems wrong or blocked! Dropped it from storage.",
-                                        &ident));
+                                        ident));
                     } else {
                         notify_and_log(&format!(
                                         "ERROR: The stored User PIN for OpenPGP card '{}' seems wrong or blocked! In addition, dropping it from storage failed.",
-                                        &ident));
+                                        ident));
                     }
 
                     return Err(AgentError::Failure);
@@ -94,7 +94,7 @@ fn do_sign(
 
                 notify(&format!(
                                 "No User PIN available for this OpenPGP card. You can store a PIN by running 'ssh-add -s {}'",
-                                &ident));
+                                ident));
 
                 return Err(AgentError::Failure);
             }
@@ -104,7 +104,7 @@ fn do_sign(
         let touch_prompt = || {
             notify(&format!(
                 "Touch confirmation needed for ssh auth on card {}",
-                &ident
+                ident
             ));
 
             #[cfg(not(feature = "notify"))]
