@@ -7,14 +7,18 @@ mod ssh;
 
 use card_backend_pcsc::PcscBackend;
 use clap::Parser;
-use openpgp_card::ocard::crypto::{HashAlgo, PublicKeyMaterial, SigningAlgo};
-use openpgp_card::ocard::{OpenPGP, Transaction};
+use openpgp_card::ocard::{
+    OpenPGP,
+    Transaction,
+    crypto::{HashAlgo, PublicKeyMaterial, SigningAlgo},
+};
 use secrecy::ExposeSecret as _;
 use sha2::digest::generic_array::GenericArray;
-use ssh_agent_lib::agent::service_binding::Binding;
-use ssh_agent_lib::agent::{bind, Session};
-use ssh_agent_lib::error::AgentError;
-use ssh_agent_lib::proto::{Identity, SignRequest, SmartcardKey};
+use ssh_agent_lib::{
+    agent::{Session, bind, service_binding::Binding},
+    error::AgentError,
+    proto::{Identity, SignRequest, SmartcardKey},
+};
 use ssh_key::{Algorithm, EcdsaCurve, HashAlg, Signature};
 
 #[derive(Default, Clone)]
@@ -73,12 +77,14 @@ fn do_sign(
 
                     if res.is_ok() {
                         notify_and_log(&format!(
-                                        "ERROR: The stored User PIN for OpenPGP card '{}' seems wrong or blocked! Dropped it from storage.",
-                                        ident));
+                            "ERROR: The stored User PIN for OpenPGP card '{}' seems wrong or blocked! Dropped it from storage.",
+                            ident
+                        ));
                     } else {
                         notify_and_log(&format!(
-                                        "ERROR: The stored User PIN for OpenPGP card '{}' seems wrong or blocked! In addition, dropping it from storage failed.",
-                                        ident));
+                            "ERROR: The stored User PIN for OpenPGP card '{}' seems wrong or blocked! In addition, dropping it from storage failed.",
+                            ident
+                        ));
                     }
 
                     return Err(AgentError::Failure);
@@ -93,8 +99,9 @@ fn do_sign(
                 );
 
                 notify(&format!(
-                                "No User PIN available for this OpenPGP card. You can store a PIN by running 'ssh-add -s {}'",
-                                ident));
+                    "No User PIN available for this OpenPGP card. You can store a PIN by running 'ssh-add -s {}'",
+                    ident
+                ));
 
                 return Err(AgentError::Failure);
             }
@@ -212,12 +219,12 @@ impl Session for Backend {
         for b in backends.filter_map(|b| b.ok()) {
             if let Ok(mut card) = OpenPGP::new(b)
                 && let Ok(mut tx) = card.transaction()
-                    && let Some(pkm) = card::match_ssh_blob(&mut tx, request.credential.key_data())
-                    {
-                        // This card has the key material that we want to sign with,
-                        // so we try signing the request with it.
-                        return do_sign(&mut tx, &request, pkm);
-                    }
+                && let Some(pkm) = card::match_ssh_blob(&mut tx, request.credential.key_data())
+            {
+                // This card has the key material that we want to sign with,
+                // so we try signing the request with it.
+                return do_sign(&mut tx, &request, pkm);
+            }
         }
 
         log::debug!("Got a signing request for an identity we don't know about");

@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use card_backend_pcsc::PcscBackend;
-use openpgp_card::ocard::crypto::PublicKeyMaterial;
-use openpgp_card::ocard::{KeyType, OpenPGP, Transaction};
+use openpgp_card::ocard::{KeyType, OpenPGP, Transaction, crypto::PublicKeyMaterial};
 use ssh_agent_lib::proto::Identity;
 
 use crate::ssh::get_ssh_pubkey;
@@ -19,17 +18,18 @@ pub(crate) fn list_ssh_identities() -> Result<Vec<Identity>, Box<dyn std::error:
         let mut tx = card.transaction()?;
 
         if let Ok(pubkey) = tx.public_key(KeyType::Authentication)
-            && let Ok(ssh) = get_ssh_pubkey(&pubkey) {
-                let id = Identity {
-                    credential: ssh.into(),
-                    comment: tx
-                        .application_identifier()
-                        .map(|aid| aid.ident())
-                        .unwrap_or("Unknown card".to_string()),
-                };
+            && let Ok(ssh) = get_ssh_pubkey(&pubkey)
+        {
+            let id = Identity {
+                credential: ssh.into(),
+                comment: tx
+                    .application_identifier()
+                    .map(|aid| aid.ident())
+                    .unwrap_or("Unknown card".to_string()),
+            };
 
-                ids.push(id);
-            }
+            ids.push(id);
+        }
     }
 
     Ok(ids)
@@ -41,17 +41,18 @@ pub(crate) fn match_ssh_blob(
     blob: &ssh_key::public::KeyData,
 ) -> Option<PublicKeyMaterial> {
     if let Ok(pkm) = tx.public_key(KeyType::Authentication)
-        && let Ok(ssh) = get_ssh_pubkey(&pkm) {
-            log::debug!(
-                "match_ssh_blob: searching blob {:02x?}, found on card {:02x?}",
-                blob,
-                ssh
-            );
+        && let Ok(ssh) = get_ssh_pubkey(&pkm)
+    {
+        log::debug!(
+            "match_ssh_blob: searching blob {:02x?}, found on card {:02x?}",
+            blob,
+            ssh
+        );
 
-            if &ssh == blob {
-                return Some(pkm);
-            }
+        if &ssh == blob {
+            return Some(pkm);
         }
+    }
 
     None
 }

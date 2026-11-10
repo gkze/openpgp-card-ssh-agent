@@ -2,15 +2,16 @@
 // SPDX-FileCopyrightText: 2022-2024 Heiko Schaefer <heiko@schaefer.name>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use openpgp_card::ocard::algorithm::{AlgorithmAttributes, Curve};
-use openpgp_card::ocard::crypto::{EccType, PublicKeyMaterial};
+use openpgp_card::ocard::{
+    algorithm::{AlgorithmAttributes, Curve},
+    crypto::{EccType, PublicKeyMaterial},
+};
 use ssh_agent_lib::proto::SignRequest;
-use ssh_key::public::EcdsaPublicKey;
-use ssh_key::public::Ed25519PublicKey;
-use ssh_key::public::KeyData;
-use ssh_key::public::RsaPublicKey;
-use ssh_key::sec1::EncodedPoint;
-use ssh_key::Mpint;
+use ssh_key::{
+    Mpint,
+    public::{EcdsaPublicKey, Ed25519PublicKey, KeyData, RsaPublicKey},
+    sec1::EncodedPoint,
+};
 
 pub(crate) fn get_ssh_pubkey(
     pkm: &PublicKeyMaterial,
@@ -49,7 +50,7 @@ pub(crate) fn get_ssh_pubkey(
                                         "Unsupported ECDSA curve {:?}",
                                         ecc_attrs.curve()
                                     )
-                                    .into())
+                                    .into());
                                 }
                             }))
                         } else {
