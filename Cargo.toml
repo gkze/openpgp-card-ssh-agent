@@ -8,7 +8,7 @@ description = "A simple ssh-agent backed by OpenPGP card authentication keys"
 version = "0.3.7"
 authors = ["Wiktor Kwapisiewicz <wiktor@metacode.biz>", "Heiko Schaefer <heiko@schaefer.name>"]
 license = "MIT OR Apache-2.0"
-edition = "2021"
+edition = "2024"
 repository = "https://codeberg.org/openpgp-card/ssh-agent/"
 documentation = "https://docs.rs/openpgp-card-ssh-agent"
 

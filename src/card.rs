@@ -18,8 +18,8 @@ pub(crate) fn list_ssh_identities() -> Result<Vec<Identity>, Box<dyn std::error:
         let mut card = OpenPGP::new(b)?;
         let mut tx = card.transaction()?;
 
-        if let Ok(pubkey) = tx.public_key(KeyType::Authentication) {
-            if let Ok(ssh) = get_ssh_pubkey(&pubkey) {
+        if let Ok(pubkey) = tx.public_key(KeyType::Authentication)
+            && let Ok(ssh) = get_ssh_pubkey(&pubkey) {
                 let id = Identity {
                     credential: ssh.into(),
                     comment: tx
@@ -30,7 +30,6 @@ pub(crate) fn list_ssh_identities() -> Result<Vec<Identity>, Box<dyn std::error:
 
                 ids.push(id);
             }
-        }
     }
 
     Ok(ids)
@@ -41,8 +40,8 @@ pub(crate) fn match_ssh_blob(
     tx: &mut Transaction,
     blob: &ssh_key::public::KeyData,
 ) -> Option<PublicKeyMaterial> {
-    if let Ok(pkm) = tx.public_key(KeyType::Authentication) {
-        if let Ok(ssh) = get_ssh_pubkey(&pkm) {
+    if let Ok(pkm) = tx.public_key(KeyType::Authentication)
+        && let Ok(ssh) = get_ssh_pubkey(&pkm) {
             log::debug!(
                 "match_ssh_blob: searching blob {:02x?}, found on card {:02x?}",
                 blob,
@@ -53,7 +52,6 @@ pub(crate) fn match_ssh_blob(
                 return Some(pkm);
             }
         }
-    }
 
     None
 }
