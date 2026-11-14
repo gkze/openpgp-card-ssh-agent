@@ -14,8 +14,15 @@ pub(crate) fn list_ssh_identities() -> Result<Vec<Identity>, Box<dyn std::error:
     let mut ids = vec![];
 
     for b in backends.filter_map(|c| c.ok()) {
-        let mut card = OpenPGP::new(b)?;
-        let mut tx = card.transaction()?;
+        // Skip cards without an OpenPGP card application (e.g. PKCS#15 cards)
+        let Ok(mut card) = OpenPGP::new(b).inspect_err(|e| {
+            log::debug!("list_ssh_identities: skipping card that failed to open: {e}")
+        }) else {
+            continue;
+        };
+        let Ok(mut tx) = card.transaction() else {
+            continue;
+        };
 
         if let Ok(pubkey) = tx.public_key(KeyType::Authentication)
             && let Ok(ssh) = get_ssh_pubkey(&pubkey)
@@ -63,14 +70,22 @@ pub(crate) fn card_by_ident(ident: &str) -> Result<OpenPGP, openpgp_card::Error>
     let backends = PcscBackend::cards(None)?;
 
     for b in backends.filter_map(|c| c.ok()) {
-        let mut card = OpenPGP::new(b)?;
-
-        let aid = {
-            let mut tx = card.transaction()?;
-            tx.application_related_data()?
+        // Skip cards without an OpenPGP card application (e.g. PKCS#15 cards)
+        let Ok(mut card) = OpenPGP::new(b)
+            .inspect_err(|e| log::debug!("card_by_ident: skipping card that failed to open: {e}"))
+        else {
+            continue;
         };
 
-        if aid.application_id()?.ident() == ident.to_ascii_uppercase() {
+        let Ok(aid) = card
+            .transaction()
+            .and_then(|mut tx| tx.application_related_data())
+            .and_then(|ard| ard.application_id())
+        else {
+            continue;
+        };
+
+        if aid.ident() == ident.to_ascii_uppercase() {
             return Ok(card);
         }
     }
