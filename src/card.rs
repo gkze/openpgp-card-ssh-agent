@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use card_backend_pcsc::PcscBackend;
-use openpgp_card::ocard::{KeyType, OpenPGP, Transaction, crypto::PublicKeyMaterial};
+use openpgp_card::{
+    Card,
+    ocard::{KeyType, OpenPGP, Transaction, crypto::PublicKeyMaterial},
+    state::Open,
+};
 use ssh_agent_lib::proto::Identity;
 
 use crate::ssh::get_ssh_pubkey;
@@ -66,12 +70,12 @@ pub(crate) fn match_ssh_blob(
 
 // FIXME: replace with a filter function, so main can directly iterate over cards.
 // Main shouldn't need to re-open a transaction.
-pub(crate) fn card_by_ident(ident: &str) -> Result<OpenPGP, openpgp_card::Error> {
+pub(crate) fn card_by_ident(ident: &str) -> Result<Card<Open>, openpgp_card::Error> {
     let backends = PcscBackend::cards(None)?;
 
     for b in backends.filter_map(|c| c.ok()) {
         // Skip cards without an OpenPGP card application (e.g. PKCS#15 cards)
-        let Ok(mut card) = OpenPGP::new(b)
+        let Ok(mut card) = Card::<Open>::new(b)
             .inspect_err(|e| log::debug!("card_by_ident: skipping card that failed to open: {e}"))
         else {
             continue;
@@ -79,7 +83,7 @@ pub(crate) fn card_by_ident(ident: &str) -> Result<OpenPGP, openpgp_card::Error>
 
         let Ok(aid) = card
             .transaction()
-            .and_then(|mut tx| tx.application_related_data())
+            .and_then(|mut tx| tx.card().application_related_data())
             .and_then(|ard| ard.application_id())
         else {
             continue;

@@ -7,12 +7,12 @@ mod ssh;
 
 use card_backend_pcsc::PcscBackend;
 use clap::Parser;
-use openpgp_card::ocard::{
-    OpenPGP,
-    Transaction,
-    crypto::{HashAlgo, PublicKeyMaterial, SigningAlgo},
+use openpgp_card::{
+    Card,
+    ocard::crypto::{HashAlgo, PublicKeyMaterial, SigningAlgo},
+    state::{Open, Transaction},
 };
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use sha2::digest::generic_array::GenericArray;
 use ssh_agent_lib::{
     agent::{Session, bind, service_binding::Binding},
@@ -45,11 +45,11 @@ fn notify_and_log(msg: &str) {
 }
 
 fn do_sign(
-    tx: &mut Transaction,
+    tx: &mut Card<Transaction>,
     request: &SignRequest,
     pkm: PublicKeyMaterial,
 ) -> Result<Signature, AgentError> {
-    let ard = tx.application_related_data().map_err(|e| {
+    let ard = tx.card().application_related_data().map_err(|e| {
         log::debug!("failed to get application_related_data: {}", e);
         AgentError::other(e)
     })?;
@@ -67,8 +67,9 @@ fn do_sign(
         // Get User PIN from the state backend and present it to the card
         match openpgp_card_state::get_pin(&ident) {
             Ok(Some(pin)) => {
-                // Our PIN backend has a User PIN for this ident
-                if tx.verify_pw1_user(pin.as_bytes().to_vec().into()).is_err() {
+                // Our PIN backend has a User PIN for this ident.
+                // (Card::verify_user_pin applies the card's KDF transformation, if any.)
+                if tx.verify_user_pin(SecretString::from(pin)).is_err() {
                     // .. but verification against the card failed. Bad PIN?
 
                     // We drop the PIN from the state backend, to avoid exhausting
@@ -132,11 +133,15 @@ fn do_sign(
         if let Ok(signature) = match sig_scheme {
             Algorithm::Rsa {
                 hash: Some(HashAlg::Sha256),
-            } => tx.authenticate_for_hash(SigningAlgo::RSA(HashAlgo::SHA256), &digest),
+            } => tx
+                .card()
+                .authenticate_for_hash(SigningAlgo::RSA(HashAlgo::SHA256), &digest),
             Algorithm::Rsa {
                 hash: Some(HashAlg::Sha512),
-            } => tx.authenticate_for_hash(SigningAlgo::RSA(HashAlgo::SHA512), &digest),
-            _ => tx.internal_authenticate(digest),
+            } => tx
+                .card()
+                .authenticate_for_hash(SigningAlgo::RSA(HashAlgo::SHA512), &digest),
+            _ => tx.card().internal_authenticate(digest),
         } {
             log::debug!("sig from card: ({}) {:02x?}", signature.len(), signature);
 
@@ -217,9 +222,9 @@ impl Session for Backend {
         };
 
         for b in backends.filter_map(|b| b.ok()) {
-            if let Ok(mut card) = OpenPGP::new(b)
+            if let Ok(mut card) = Card::<Open>::new(b)
                 && let Ok(mut tx) = card.transaction()
-                && let Some(pkm) = card::match_ssh_blob(&mut tx, request.credential.key_data())
+                && let Some(pkm) = card::match_ssh_blob(tx.card(), request.credential.key_data())
             {
                 // This card has the key material that we want to sign with,
                 // so we try signing the request with it.
@@ -260,6 +265,7 @@ impl Session for Backend {
         // Check if the card contains an AUTH key
         // (using the fingerprint field as an indicator)
         if tx
+            .card()
             .application_related_data()
             .map_err(AgentError::other)?
             .fingerprints()
@@ -277,7 +283,8 @@ impl Session for Backend {
         }
 
         // Check if the card agrees with this User PIN
-        tx.verify_pw1_user(pin.expose_secret().as_bytes().to_vec().into())
+        // (Card::verify_user_pin applies the card's KDF transformation, if any)
+        tx.verify_user_pin(SecretString::from(pin.expose_secret()))
             .map_err(|e| {
                 notify_and_log(&format!(
                     "User PIN verification failed on card {}: {}",
